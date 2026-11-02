@@ -662,7 +662,7 @@ than the editor is cut to leave the buttons visible.
 
 Options of `kit.confirm` / `kit.ask`:
 
-- `default` -- the button that starts focused (index or label; the first when omitted or unknown).
+- `default` -- the button that starts focused (index or label). When omitted or unknown the safe button starts focused: `No` of the Yes/No pair, else the first button labelled No/Cancel (also `Nein`/`Abbrechen`), else the last button — so a stray `<CR>` never confirms a destructive action. Set `default = 1` to start on the first button.
   With it the order of the buttons is the natural one (action first, cancel last) and `<CR>` still
   lands on the safe answer.
 - `choices` as a list of labels, or as a `vim.fn.confirm` string: buttons separated by a newline,
