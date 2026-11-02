@@ -765,13 +765,13 @@ end
 
 ---Handle kit-playground command: without an id, open the playground list
 ---(`ui.kit_playground`), a demo of every `ui.kit` primitive; with one, start
----that demo directly.
+---that demo directly; `loop` brings the list back whenever a demo is closed.
 ---@param args string[]
 local function ui_kit_playground(args)
   local playground = require("ui.kit_playground")
   local id = args[2]
-  if not id or id == "" then
-    playground.open()
+  if not id or id == "" or id == "loop" then
+    playground.open({ reopen = id == "loop" })
     return
   end
   local _, err = playground.run(id)

@@ -590,7 +590,7 @@ local ENTRIES = {
     label = "Prompt (confirm as a list)",
     covers = { "prompt" },
     desc = {
-      "kit.prompt({ answer_type = 'confirm' }): yes/no as a list -> boolean.",
+      "kit.prompt({ answer_type = 'confirm' }): yes/no as a list -> boolean (y/n answer too).",
       "answer_type = 'text' is a kit.input.",
     },
     open = function(ctx)
@@ -1084,9 +1084,56 @@ function M.run(id)
   end
 end
 
+---@type integer|nil
+local reopen_group
+
+---Reopen the list once every float a demo opened is gone (and run the demo's closer first).
+---Does nothing for a demo that left no float behind, which would otherwise never come back.
+---@param before table<integer, true> # the floats that were there before the demo started
+---@param close fun() # the demo's closer
+local function reopen_when_closed(before, close)
+  local opened = {}
+  for _, win in ipairs(float_wins()) do
+    if not before[win] then
+      opened[#opened + 1] = win
+    end
+  end
+  if #opened == 0 then
+    return
+  end
+  if reopen_group then
+    pcall(api.nvim_del_augroup_by_id, reopen_group)
+  end
+  local group = api.nvim_create_augroup("ui_kit_playground_reopen", { clear = true })
+  reopen_group = group
+  api.nvim_create_autocmd("WinClosed", {
+    group = group,
+    callback = function()
+      vim.schedule(function()
+        if reopen_group ~= group then
+          return
+        end
+        for _, win in ipairs(opened) do
+          if api.nvim_win_is_valid(win) then
+            return
+          end
+        end
+        reopen_group = nil
+        pcall(api.nvim_del_augroup_by_id, group)
+        close()
+        M.open({ reopen = true })
+      end)
+    end,
+  })
+end
+
 ---Open the playground: a shortlist of every demo; `<CR>` (or `1`..`9`) starts one.
+---With `reopen = true` the list comes back when the demo's windows are closed, so the
+---command need not be called again (`:UI kit-playground loop`).
+---@param opts? { reopen?: boolean }
 ---@return table|nil handle  # the `kit.shortlist` handle
-function M.open()
+function M.open(opts)
+  local reopen = opts and opts.reopen
   return kit().shortlist({
     items = ENTRIES,
     number_keys = true,
@@ -1104,9 +1151,15 @@ function M.open()
     end,
     preview_bo = { modifiable = false },
     on_submit = function(entry)
-      local _, err = M.run(entry.id)
+      local before = {}
+      for _, win in ipairs(float_wins()) do
+        before[win] = true
+      end
+      local close, err = M.run(entry.id)
       if err then
         vim.notify(err, vim.log.levels.ERROR)
+      elseif reopen and close then
+        reopen_when_closed(before, close)
       end
     end,
   })
