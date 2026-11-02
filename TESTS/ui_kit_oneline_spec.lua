@@ -107,6 +107,7 @@ describe("a one-line component given text with newlines", function()
       local surf = confirm.open({
         question = "Sure?",
         choices = { "a\nb", "c" },
+        default = 1,
         on_answer = function(v)
           answered = v
         end,

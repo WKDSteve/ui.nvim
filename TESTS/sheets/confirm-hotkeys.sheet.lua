@@ -18,7 +18,7 @@ return {
     { wait = "vim.api.nvim_win_get_config(0).relative == ''", note = "the dialog is gone" },
     {
       lua = [[require("ui.kit").confirm({ question = "Pick one",
-        choices = { "+", "-", "*", "/", "=", "<", ">", "?", "!" }, on_answer = function() end })]],
+        choices = { "+", "-", "*", "/", "=", "<", ">", "?", "!" }, default = 1, on_answer = function() end })]],
       note = "nine buttons without letters: digits 1-9",
     },
     { settle = 3000 },

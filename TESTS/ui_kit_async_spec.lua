@@ -1,5 +1,19 @@
 -- See TESTS/config_spec.lua for what these suppressions cover and why.
 ---@diagnostic disable: need-check-nil, undefined-field, discard-returns
+-- lib.nvim's kit.confirm focuses the safe button (No) when no `default` is given; these specs drive "Yes"
+-- with a bare confirm()/<CR>, so they ask for the first button explicitly.
+do
+  local confirm = require("ui.kit.confirm")
+  for _, name in ipairs({ "open", "ask" }) do
+    local orig = confirm[name]
+    confirm[name] = function(opts)
+      if type(opts) == "table" and opts.default == nil then
+        opts = vim.tbl_extend("force", opts, { default = 1 })
+      end
+      return orig(opts)
+    end
+  end
+end
 
 -- `kit.async`: coroutines over the callback components. The semantics here; typed keys in a real
 -- UI are in ui_kit_async_keys_spec.lua.
