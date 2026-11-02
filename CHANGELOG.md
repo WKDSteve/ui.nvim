@@ -7,7 +7,7 @@ Behavior changes of ui.nvim that a user or a host config can notice. The format 
 
 ### Changed
 
-- `kit.confirm` / `kit.ask` (from lib.nvim): without `default` the safe button starts focused (`No` of the Yes/No pair, else the first no/cancel-style label, else the last button) instead of the first one, so a stray `<CR>` never confirms a destructive action. A caller that wants the first button sets `default = 1`.
+- `kit.confirm` / `kit.ask` (from lib.nvim): without `default` the safe button starts focused (`No` of the Yes/No pair, else the first no/cancel-style label, else the first button) instead of always the first one, so a stray `<CR>` never confirms a destructive action where the dialog offers a way out.
 
 - The kit lives only in lib.nvim: every `ui.kit.*` module is a re-export of `lib.nvim.ui.kit.*` (same table, one theme state). `scripts/mirror_kit.lua` and the kit drift spec are gone; `kit.keys` (viewer keys), the status tokens and the viewer hook moved to lib.nvim. Specs that stub a kit module through `package.loaded` use the lib.nvim name.
 

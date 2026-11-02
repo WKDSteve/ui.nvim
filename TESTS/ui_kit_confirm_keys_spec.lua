@@ -69,7 +69,11 @@ local function body(stub)
   eq(confirm.current_focus(), 3, "default by label")
   confirm.cancel()
   open({ question = "Which?", choices = { "a", "b" }, default = 9 })
-  eq(confirm.current_focus(), 2, "a default that names no button falls back to the safe button")
+  eq(
+    confirm.current_focus(),
+    1,
+    "a default that names no button falls back to the first (no No/Cancel label)"
+  )
   confirm.cancel()
 
   -- ---------------------------------------------------------------- hotkeys
