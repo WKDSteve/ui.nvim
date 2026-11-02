@@ -4,12 +4,10 @@
 > `require("ui.kit.x")` and `require("lib.nvim.ui.kit.x")` are the same table. This guide still describes the kit;
 > fixes and features are made in lib.nvim.
 
-> Ported from `lib.nvim.ui.kit` (PLAN-ui-kit-migration.md step 3: mechanical
-> prefix rename, source and tests, into this plugin). The extended user guide
-> and the per-component `docs/EXAMPLES/kit-*.lua` files that used to sit
-> alongside this in `lib.nvim` were not ported yet — for now, `:KitPreview`
-> (a live theme playground), `:UI kit-playground` (one interactive demo per
-> primitive, `lua/ui/kit_playground/init.lua`) and this README are what ships here.
+> The extended user guide is `lib.nvim/docs/GUIDE-ui-kit.md` and the per-component
+> examples are `lib.nvim/docs/EXAMPLES/kit-*.lua`; `:KitPreview` (a live theme
+> playground) and `:UI kit-playground` (one interactive demo per primitive,
+> `lua/ui/kit_playground/init.lua`) ship here.
 
 A themed, composable UI toolkit. Pick a preset once and every popup is visually
 coordinated, or override colors/borders per call. Built in layers on top of
