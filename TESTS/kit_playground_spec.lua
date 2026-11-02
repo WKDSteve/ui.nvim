@@ -192,18 +192,21 @@ describe("ui.kit_playground", function()
     press("1") -- the presets demo: a kit.select
     assert.is_true(vim.wait(1000, chooser.is_open, 10))
     chooser.close()
-    assert.is_true(vim.wait(1000, function()
-      local lists = 0
-      for _, buf in ipairs(api.nvim_list_bufs()) do
-        if api.nvim_buf_is_valid(buf) and #vim.fn.win_findbuf(buf) > 0 then
-          local first = api.nvim_buf_get_lines(buf, 0, 1, false)[1] or ""
-          if first:find(playground.entries()[1].id, 1, true) then
-            lists = lists + 1
+    assert.is_true(
+      vim.wait(1000, function()
+        local lists = 0
+        for _, buf in ipairs(api.nvim_list_bufs()) do
+          if api.nvim_buf_is_valid(buf) and #vim.fn.win_findbuf(buf) > 0 then
+            local first = api.nvim_buf_get_lines(buf, 0, 1, false)[1] or ""
+            if first:find(playground.entries()[1].id, 1, true) then
+              lists = lists + 1
+            end
           end
         end
-      end
-      return lists > 0 and not list_open(h)
-    end, 10), "the list is open again after the demo closed")
+        return lists > 0 and not list_open(h)
+      end, 10),
+      "the list is open again after the demo closed"
+    )
     press("q")
     assert.is_true(vim.wait(1000, function()
       return not chooser.is_open()
@@ -224,9 +227,12 @@ describe("ui.kit_playground", function()
         api.nvim_win_close(win, true)
       end
     end
-    assert.is_true(vim.wait(1000, function()
-      return float_count() >= 2 -- the list (list + preview) is back
-    end, 10), "the list returns after the note closed")
+    assert.is_true(
+      vim.wait(1000, function()
+        return float_count() >= 2 -- the list (list + preview) is back
+      end, 10),
+      "the list returns after the note closed"
+    )
     press("q")
 
     -- without the option the demo closing leaves nothing behind
