@@ -209,6 +209,26 @@ describe("ui.kit_playground", function()
       return not chooser.is_open()
     end, 10))
 
+    -- a demo that swaps its float for another keeps the list away until the last one is closed
+    local h2 = assert(playground.open({ reopen = true }))
+    press("1")
+    assert.is_true(vim.wait(1000, chooser.is_open, 10))
+    press("<CR>") -- picks a preset: the chooser closes, a note opens
+    assert.is_true(vim.wait(1000, function()
+      return not chooser.is_open()
+    end, 10))
+    vim.wait(150)
+    assert.is_false(list_open(h2), "the list stays closed while the note is open")
+    for _, win in ipairs(api.nvim_list_wins()) do -- the note is the only float left
+      if api.nvim_win_get_config(win).relative ~= "" then
+        api.nvim_win_close(win, true)
+      end
+    end
+    assert.is_true(vim.wait(1000, function()
+      return float_count() >= 2 -- the list (list + preview) is back
+    end, 10), "the list returns after the note closed")
+    press("q")
+
     -- without the option the demo closing leaves nothing behind
     local floats0 = screen()
     local plain = assert(playground.open())

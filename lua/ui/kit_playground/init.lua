@@ -1113,8 +1113,10 @@ local function reopen_when_closed(before, close)
         if reopen_group ~= group then
           return
         end
-        for _, win in ipairs(opened) do
-          if api.nvim_win_is_valid(win) then
+        -- a demo may swap its float for another one (a chooser for the note of the pick):
+        -- the list waits for every float that was not there before the demo
+        for _, win in ipairs(float_wins()) do
+          if not before[win] then
             return
           end
         end
