@@ -121,14 +121,17 @@ done
 [[ -f "$DRIVER" ]] || fail "error: the runner entry is missing: $DRIVER"
 
 # Throwaway app name: the run gets its own stdpath("config"/"data"/"state"), never the developer's.
-# `ci`: the pipeline's document (ci.json) and the suite's stamp must land in the developer's real state directory,
-# where `testing ci verify`, the pre-push hook and `:Testing ci status` read them. It is asked for BEFORE the throwaway
-# app name and the scratch directory below and handed to `testing ci --state-dir` (an argument, not the environment:
-# the specs must not inherit it).
+# `ci` and the plain run: the pipeline's document (ci.json), the suite's stamp and the run history (runs.jsonl) must
+# land in the developer's real state directory, where `testing ci verify`, the pre-push hook, `:Testing ci status` and
+# the editor's test explorer read them. It is asked for BEFORE the throwaway app name and the scratch directory below
+# and handed to `testing ci --state-dir` / `testing run --state-dir` (an argument, not the environment: the specs
+# must not inherit it).
 real_state=""
-if [[ "${1:-}" == "ci" ]]; then
+if [[ "${1:-}" != "surface" && "${1:-}" != "conformance" ]]; then
   real_state="$(nvim -n -i NONE --headless -u NONE --cmd 'lua io.stdout:write(vim.fn.stdpath("state"))' --cmd 'qa!' 2>/dev/null)" || real_state=""
-  [[ -n "$real_state" ]] || fail 'error: cannot ask nvim for stdpath("state"); the ci document would be lost.'
+  if [[ "${1:-}" == "ci" ]]; then
+    [[ -n "$real_state" ]] || fail 'error: cannot ask nvim for stdpath("state"); the ci document would be lost.'
+  fi
 fi
 
 # Always this name: an NVIM_APPNAME the developer exported (a second config) would make the run read and write that
@@ -141,6 +144,30 @@ trap 'rm -rf "$scratch"' EXIT
 if command -v cygpath >/dev/null 2>&1; then
   scratch="$(cygpath -m "$scratch")"
 fi
+# A second full suite in the same checkout only warns (scripts/suite-lock.sh of testing.nvim, when that checkout has
+# it): two at once make the process specs time out. Partial runs and the other subcommands take no lock. The lock is
+# not released on exit: a holder whose pid is gone is taken over silently.
+full_suite=0
+case "${1:-}" in
+  surface | conformance) ;;
+  ci)
+    case "${2:-}" in
+      "" | -*) full_suite=1 ;;
+    esac
+    ;;
+  *) full_suite=1 ;;
+esac
+for a in "$@"; do
+  case "$a" in
+    --file | --file=* | --list | --changed | --help | -h) full_suite=0 ;;
+  esac
+done
+lock_lib="${TESTING_NVIM_DIR:-}/scripts/suite-lock.sh"
+if [[ "$full_suite" == 1 && -n "$real_state" && -f "$lock_lib" ]]; then
+  # shellcheck disable=SC1090
+  . "$lock_lib"
+  suite_lock_acquire "$real_state" "$ROOT"
+fi
 export XDG_STATE_HOME="$scratch/state"
 export XDG_CACHE_HOME="$scratch/cache"
 
@@ -151,7 +178,7 @@ if [ "${1:-}" = "surface" ]; then
   nvim -n -i NONE --headless -u NONE -l "$DRIVER" surface . "$@"
   exit $?
 fi
-# `scripts/test.sh conformance`: the conformance suite K1..K15 in the same environment (docs/CONFORMANCE.md of testing.nvim)
+# `scripts/test.sh conformance`: the conformance suite K1..K16 in the same environment (docs/CONFORMANCE.md of testing.nvim)
 if [ "${1:-}" = "conformance" ]; then
   shift
   nvim -n -i NONE --headless -u NONE -l "$DRIVER" conformance . "$@"
@@ -174,4 +201,6 @@ if [ "${1:-}" = "ci" ]; then
   nvim -n -i NONE --headless -u NONE -l "$DRIVER" ci ${ci_args[@]+"${ci_args[@]}"} "$@"
   exit $?
 fi
+# the real state directory goes first, an `--state-dir` of the caller after it wins
+[[ -z "$real_state" ]] || set -- --state-dir "$real_state" "$@"
 nvim -n -i NONE --headless -u NONE -l "$DRIVER" run . "$@"

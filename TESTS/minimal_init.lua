@@ -2,8 +2,7 @@
 --
 --   nvim -n -i NONE --headless -u TESTS/minimal_init.lua ...
 --
--- Besides the runtimepath it sets up the suite's shared state (no swap/shada; the in-memory
--- clipboard comes from testing.nvim). It runs no spec itself. A dependency that cannot be found is FATAL (NEW-40): the message names
+-- It runs nothing itself. A dependency that cannot be found is FATAL (NEW-40): the message names
 -- all four places that were searched and the process exits with code 1, so that a run which could
 -- not load its dependency never looks green. Each dependency <name> is looked up in, in this order:
 --   1. $<NAME>_DIR                  (lib.nvim -> $LIB_NVIM_DIR)
