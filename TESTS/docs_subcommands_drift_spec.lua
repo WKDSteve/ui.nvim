@@ -43,12 +43,10 @@ local function has_any(text, needles)
 end
 
 describe("docs list every :UI subcommand", function()
-  if type(composer.registry) ~= "function" then
-    it("needs a lib.nvim with the composer registry", function()
-      pending("lib.nvim has no composer.registry")
-    end)
-    return
-  end
+  assert(
+    type(composer.registry) == "function",
+    "lib.nvim lacks composer.registry: update lib.nvim, these cases cannot run without it"
+  )
 
   pcall(function()
     require("ui.bindings.usrcmds").setup()
