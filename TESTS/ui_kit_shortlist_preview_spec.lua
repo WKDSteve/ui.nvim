@@ -395,7 +395,7 @@ describe("ui.kit.shortlist: the preview pane", function()
       assert.equals("", footer_text(h.results.winid))
       assert.equals("", footer_text(h.preview.winid))
       press("<Tab>")
-      assert.is_nil(winhl(h.preview.winid):find("KitAccent", 1, true))
+      assert.is_nil(winhl(h.preview.winid):find("FloatBorder:KitAccent", 1, true))
     end)
 
     it("a disabled key group is left out of the hints", function()
