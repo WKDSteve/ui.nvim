@@ -32,7 +32,7 @@ tabline and theme assembly are frame.
 ==============================================================================
 2. REQUIREMENTS                                          *ui-requirements*
 
-    Neovim      0.10+
+    Neovim      0.11+
     lib.nvim    required
     NvChad      not required by this plugin's own code (v2.5, if present)
 
