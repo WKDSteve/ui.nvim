@@ -86,6 +86,7 @@ modules = {
 | `github_stats_badge` | This week's view count for the repo the buffer is in, e.g. `"42 views this week"` — only inside a repo github_stats.nvim tracks | github_stats.nvim | `ui.statusline.modules.github_stats_badge` |
 | `runtime_analysis_ampel` | Traffic-light glyph (🟢/🟡/🔴) for whether any runtime-analysis.nvim-instrumented plugin errored or ran slow today | runtime-analysis.nvim | `ui.statusline.modules.runtime_analysis_ampel` |
 | `recommender_badge` | Count of recommender.nvim alias suggestions open for the current buffer, e.g. `"3 alias suggestions open for this file"` | recommender.nvim | `ui.statusline.modules.recommender_badge` |
+| `learn_plan_viewer_badge` | Progress of the nvim config's `:LearnPlanViewer`, e.g. `"Woche 3/12 · 5 Checks"`; empty until a week was opened | the nvim config | `ui.statusline.modules.learn_plan_viewer_badge` |
 | `session_status` | sessions.nvim's active session name, with a dirty marker (` *`) when the window/buffer layout changed since the last save or load | sessions.nvim | `ui.statusline.modules.session_status` |
 | `sandbox_ambient` | sandbox.nvim's ambient container summary, e.g. `"docker (2/5)"` | sandbox.nvim | `ui.statusline.modules.sandbox_ambient` |
 | `gitsuite_conflict` | gitsuite.nvim's ambient merge-conflict indicator, e.g. `"MERGE 2"` | gitsuite.nvim | `ui.statusline.modules.gitsuite_conflict` |
@@ -514,6 +515,7 @@ eight, each a ~20-24-line adapter here:
 | `sandbox_ambient` | `sandbox.statusline` |
 | `session_status` | `sessions.statusline` |
 | `recommender_badge` | `recommender.statusline` |
+| `learn_plan_viewer_badge` | `bindings.usrcmds.learn_plan_viewer.statusline` |
 | `github_stats_badge` | `github_stats.statusline` |
 | `runtime_analysis_ampel` | `runtime-analysis.statusline` |
 | `casedesk` | `casedesk.statusline` |

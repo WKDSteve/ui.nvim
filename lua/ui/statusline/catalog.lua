@@ -201,6 +201,14 @@ return {
     used_by = {},
   },
   {
+    key = "learn_plan_viewer_badge",
+    summary = 'Progress of the nvim config\'s :LearnPlanViewer, e.g. "Woche 3/12 · 5 Checks"; empty until a week was opened.',
+    requires = "the nvim config's learn_plan_viewer",
+    builtin = false,
+    source = "ui.statusline.modules.learn_plan_viewer_badge",
+    used_by = {},
+  },
+  {
     key = "session_status",
     summary = "sessions.nvim's active session name, with a dirty marker when the layout changed since the last save/load.",
     requires = "sessions.nvim",
