@@ -477,6 +477,12 @@ require("ui.config").setup({
 What each gesture does, and what the menu holds, is in
 [BINDINGS.md](BINDINGS.md#tabline-mouse).
 
+## Tab-tree offset
+
+`tabline.tree_offset_ft` (default `"filetree"`) is the filetype of the tree window the `tree_offset` segment
+reserves a blank strip for, so the buffer chips are not drawn underneath it. `"filetree"` is filetree.nvim's own
+filetype; set it to `"NvimTree"` or `"neo-tree"` for another tree.
+
 ## Tabline text contrast
 
 The inactive chips take their colors from the scheme's `TabLine` group. A scheme whose `TabLine.fg` sits next to
