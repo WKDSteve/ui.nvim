@@ -523,9 +523,13 @@ function M.close_bufs(bufnrs, done)
   -- below -- without this, "close all" with N unsaved buffers popped N
   -- sequential save-changes dialogs for a single `<leader>bq`.
   local modified = 0
+  -- the buffers the question is about: one that became modified after it was asked is not covered
+  -- by the answer and stays open
+  local asked_about = {}
   for _, bufnr in ipairs(bufnrs) do
     if needs_close_confirm(bufnr) then
       modified = modified + 1
+      asked_about[bufnr] = true
     end
   end
 
@@ -536,7 +540,10 @@ function M.close_bufs(bufnrs, done)
   -- leaving everything after it in vim.t.bufs open.
   local function run()
     for _, bufnr in ipairs(bufnrs) do
-      pcall(M.close_buffer, bufnr, true)
+      -- a buffer edited while the dialog was open was never offered for discarding
+      if asked_about[bufnr] or not needs_close_confirm(bufnr) then
+        pcall(M.close_buffer, bufnr, true)
+      end
     end
     if done then
       done(true)

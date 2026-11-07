@@ -482,6 +482,27 @@ describe("ui.bindings.keymaps.tabufline.state buffer tracking", function()
     end)
   end)
 
+  describe("close_bufs with a buffer edited while the dialog is open", function()
+    it("keeps the buffer the question was not about", function()
+      vim.bo[a].modified = true
+
+      local dialog = require("lib.nvim.ui.dialog")
+      local original = dialog.yesno
+      local answer
+      dialog.yesno = function(_, _, cb)
+        answer = cb
+      end
+      state.close_bufs({ a, b })
+      dialog.yesno = original
+
+      vim.bo[b].modified = true -- edited after the question was asked
+      answer(true)
+      assert.same({ b, c }, vim.t.bufs, "a is discarded as asked; b was never offered")
+      vim.bo[b].modified = false
+      a = nil
+    end)
+  end)
+
   describe("goto_buf", function()
     it("switches the current buffer directly", function()
       vim.api.nvim_set_current_buf(a)
