@@ -3,6 +3,7 @@
 -- screen matches the reviewed snapshot. Left for a person: whether a real terminal draws it well.
 return {
   id = "kit.confirm-hotkeys",
+  feature = "ui.dialogs",
   title = "kit.confirm: hotkey marking of the buttons",
   task = "ui.nvim/sichtpruefung-hotkey-markierung-der-dialog-buttons-im-echten",
   engine = "rpc",

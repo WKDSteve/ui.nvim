@@ -3,6 +3,7 @@
 -- left. Left for a person: whether the rows read well, and the cheatsheet key of the real config.
 return {
   id = "ui.option-float",
+  feature = "ui.option-float",
   title = ":UI option float",
   task = "ui.nvim/try-the-ui-option-float-in-a-real-session",
   engine = "rpc",

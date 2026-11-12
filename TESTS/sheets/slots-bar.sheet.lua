@@ -3,6 +3,7 @@
 -- snapshot. Left for a person: the other presets, light and dark themes, daily use.
 return {
   id = "slots.bar-rounded",
+  feature = "ui.slots",
   title = "ui.slots: bar with chips (rounded)",
   task = "ui.nvim/slots-live-check",
   engine = "rpc",
