@@ -117,6 +117,9 @@ jobs:
           REPO: ${{ github.repository }}
           SHA: ${{ github.sha }}
         run: |
+          # The default shell of a step without `shell:` is `bash -e` without pipefail:
+          # a failing `git ls-remote` would be hidden by `cut` and read as "no branch".
+          set -o pipefail
           # Look the branch up on the remote instead of inferring "missing" from an API
           # error: a failed lookup must stop the job, not fall through to a push.
           tip=$(git ls-remote --heads origin refs/heads/ci-verified | cut -f1)
