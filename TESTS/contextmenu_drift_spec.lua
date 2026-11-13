@@ -98,6 +98,9 @@ end
 describe("ui.contextmenu and lib.nvim's frozen copy", function()
   local lib_dir = lib_root()
   if not lib_dir then
+    it("has a lib.nvim checkout to compare with", function()
+      print("n/a  no lib.nvim checkout with lua/lib/nvim/ui/kit found")
+    end)
     return
   end
 

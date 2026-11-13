@@ -161,11 +161,14 @@ describe("ui.bindings.keymaps.setup with per-action overrides", function()
 
     vim.notify = original_notify
 
+    -- The overrides took effect (setup ran through), and none of the names was called unknown.
+    assert.equals("<C-n>", find_registered("next").lhs)
+    local unknown = {}
     for _, w in ipairs(warned) do
-      assert.is_nil(
-        tostring(w.msg):find("no such keymap action", 1, true),
-        "unexpected unknown-action warning: " .. tostring(w.msg)
-      )
+      if tostring(w.msg):find("no such keymap action", 1, true) then
+        unknown[#unknown + 1] = tostring(w.msg)
+      end
     end
+    assert.are.same({}, unknown)
   end)
 end)

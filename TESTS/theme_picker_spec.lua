@@ -49,6 +49,9 @@ describe("ui.bindings.usrcmds.themes.picker", function()
   -- Needs at least two real colorschemes to move between and tell apart --
   -- true for any stock Neovim (default, blue, morning, ... ship built in).
   if #themes < 2 then
+    it("has two colorschemes to move between", function()
+      print("n/a  needs at least two installed colorschemes")
+    end)
     return
   end
 
@@ -172,6 +175,7 @@ describe("ui.bindings.usrcmds.themes.picker", function()
       -- Fewer than four installed colorschemes total -- nothing meaningful
       -- to hop across three times; the other tests already cover the
       -- two-theme case.
+      print("n/a  needs at least four installed colorschemes")
       return
     end
 

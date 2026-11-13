@@ -15,9 +15,6 @@ return {
   isolated = "file",
   -- "c" = child started from a -c command (v:vim_did_enter is 0, expand('<cword>') works), "l" = `nvim -l`.
   host = "c",
-  -- "warn" = a case without assertions passes with a recorded warning; "error" = it fails.
-  -- Switch to "error" once the empty cases are fixed.
-  assertions = "warn",
   -- Limits per case in milliseconds (the old runner had none). `file_ms`: two spec files
   -- build big directories case after case (ui_kit_path_completion: 31 cases, ~37 s alone on
   -- Windows, where creating files is slow; slots_preview); under the load of the full suite
