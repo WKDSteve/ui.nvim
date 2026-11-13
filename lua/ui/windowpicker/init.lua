@@ -45,7 +45,7 @@ local DEFAULTS = {
   -- "replacer-progress" is the filetype of lib.nvim.progress's float/kit
   -- styles: focusable by design, but a window the running operation closes
   -- again on its own -- a file opened into it would vanish with it.
-  filetype = { "neo-tree", "neo-tree-popup", "notify", "replacer-progress" },
+  filetype = { "neo-tree", "neo-tree-popup", "filetree", "notify", "replacer-progress" },
   buftype = { "terminal", "quickfix" },
   debug = false,
 }

@@ -237,6 +237,7 @@ local cfg = {
     "help",
     "qf",
     "neo-tree",
+    "filetree",
     "TelescopePrompt",
     "snacks_picker_input",
     "lazy",
