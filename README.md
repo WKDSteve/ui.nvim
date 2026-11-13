@@ -1,3 +1,5 @@
+![ui-nvim](assets/icons/ui-nvim/png/ui-nvim-128.png)
+
 > **Alpha.** All statusline, tabline and theme code stands on Neovim's own APIs —
 > neither NvChad nor base46 are required any more, including by the reference host
 > this plugin was extracted from. See [the migration record](docs/nvchad-migration.md)
