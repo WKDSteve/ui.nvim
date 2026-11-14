@@ -175,6 +175,7 @@ ui.nvim is released under the [MIT License](https://opensource.org/licenses/MIT)
 - [gitsuite.nvim](https://github.com/WKDSteve/gitsuite.nvim): The right-click menu of ui.nvim has a 'Git Actions' row from gitsuite.nvim (`gitsuite.integrations.menu`). ([picture](assets/graphs/pair/ui.nvim--gitsuite.nvim.png))
 - [hover.nvim](https://github.com/WKDSteve/hover.nvim): The url slot of ui.nvim previews a link with hover.nvim when it is installed. ([picture](assets/graphs/pair/ui.nvim--hover.nvim.png))
 - [sessions.nvim](https://github.com/WKDSteve/sessions.nvim): ui.nvim has a slot for the marks of sessions.nvim (`sessions.marks`) and says so when sessions.nvim is missing. ([picture](assets/graphs/pair/ui.nvim--sessions.nvim.png))
+- [terminal.nvim](https://github.com/WKDSteve/terminal.nvim): The statusline module `terminal_count` of ui.nvim shows the terminals of terminal.nvim, once terminal.nvim is loaded. ([picture](assets/graphs/pair/ui.nvim--terminal.nvim.png))
 - [lib.nvim](https://github.com/WKDSteve/lib.nvim): the shared base of the plugins.
 
 **Used by**
