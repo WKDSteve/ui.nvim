@@ -131,6 +131,63 @@ function M.on_right_click()
   M.open({ buf = buf, mouse = true })
 end
 
+--- Events the hidden open would fire on the user's window and buffer.
+local USER_EVENTS = "BufLeave,WinLeave,BufEnter,WinEnter"
+--- Of those, the ones a new window still fires while it shows the user's
+--- buffer, before the float's own buffer is entered.
+local NEW_WIN_EVENTS = "WinEnter,BufLeave"
+
+---@param base string
+---@param extra string
+---@return string
+local function join_events(base, extra)
+  return base == "" and extra or (base .. "," .. extra)
+end
+
+--- Keep the warm-up's open/close from looking like the user left their buffer
+--- (multicursor dropped its marks on that BufLeave): `'eventignorewin'` on the
+--- user's window ignores its Leave/Enter events, and a new window -- which
+--- inherits the option -- ignores only the two events it fires with the user's
+--- buffer still in it, until its own buffer is entered. WinNew, the float's
+--- BufEnter/BufWinEnter and its Leave events stay, so what lazy plugins load
+--- on still happens. Returns the function that puts everything back.
+---@param win integer
+---@param buf integer
+---@return fun()
+local function quiet_user_window(win, buf)
+  if vim.fn.exists("+eventignorewin") == 0 then
+    return function() end
+  end
+  local saved = vim.wo[win].eventignorewin
+  local group = vim.api.nvim_create_augroup("UiMenuWarmQuiet", { clear = true })
+  vim.api.nvim_create_autocmd("WinNew", {
+    group = group,
+    callback = function()
+      pcall(function()
+        vim.wo[0].eventignorewin = join_events(saved, NEW_WIN_EVENTS)
+      end)
+    end,
+  })
+  vim.api.nvim_create_autocmd("BufEnter", {
+    group = group,
+    callback = function(a)
+      local cur = vim.api.nvim_get_current_win()
+      if cur ~= win and a.buf ~= buf then
+        pcall(function()
+          vim.wo[cur].eventignorewin = saved
+        end)
+      end
+    end,
+  })
+  vim.wo[win].eventignorewin = join_events(saved, USER_EVENTS)
+  return function()
+    pcall(vim.api.nvim_del_augroup_by_id, group)
+    if vim.api.nvim_win_is_valid(win) then
+      vim.wo[win].eventignorewin = saved
+    end
+  end
+end
+
 --- Open and close the menu once, unseen, so the first real open does not pay
 --- the one-time costs: the kit menu's modules, the first floating window
 --- (autocmd-driven lazy plugins load on it), the first build of the entries.
@@ -158,8 +215,10 @@ function M.warm()
   if vim.api.nvim_win_get_config(win).relative ~= "" then
     return false
   end
+  local buf = vim.api.nvim_win_get_buf(win)
+  local restore = quiet_user_window(win, buf)
   local ok, surface = pcall(function()
-    return contextmenu.open(M.items(vim.api.nvim_win_get_buf(win), false, true), { mouse = false })
+    return contextmenu.open(M.items(buf, false, true), { mouse = false })
   end)
   if type(surface) == "table" and type(surface.close) == "function" then
     pcall(surface.close, surface)
@@ -168,6 +227,7 @@ function M.warm()
   if vim.api.nvim_win_is_valid(win) and vim.api.nvim_get_current_win() ~= win then
     pcall(vim.api.nvim_set_current_win, win)
   end
+  restore()
   return ok and type(surface) == "table"
 end
 

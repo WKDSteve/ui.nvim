@@ -15,6 +15,7 @@ Behavior changes of ui.nvim that a user or a host config can notice. The format 
 
 ### Fixed
 
+- `ui.menu` warm-up (the hidden open/close at idle after startup): it no longer fires `BufLeave`/`WinLeave`/`BufEnter`/`WinEnter` on the user's buffer and window (`'eventignorewin'` while it runs), so plugins that react to leaving a buffer (multicursor's marks) are not tripped by it; the float's own `WinNew`/`BufEnter`/`BufWinEnter` still fire. Needs Neovim 0.11 for the option, older versions warm up as before.
 - `ui.config.setup`: a `theme` or `tabline` subtable that exists only in the host override is copied instead of kept by reference (`lib.lua.config.deep_merge` replaces `vim.tbl_deep_extend`), so editing the returned config no longer changes the table the host passed in, or the other way round.
 - `:checkhealth ui`, Module options: the ok line of `ui.vim_ui` names `enable()` (its entry point), not `setup()`.
 - Statusline catalog: `breadcrumbs` added through "Add module" or a saved layout rendered empty (with a "no module" warning), because its source was the `ui.statusline.modules.lsp` helper table. It now points at the new function module `ui.statusline.modules.breadcrumbs`.

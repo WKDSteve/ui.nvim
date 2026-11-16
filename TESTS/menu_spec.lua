@@ -1081,6 +1081,74 @@ describe("ui.menu", function()
       assert.equals(0, calls)
     end)
 
+    -- multicursor (nvim config) dropped its marks on the BufLeave the hidden
+    -- open fired on the user's buffer: the warm-up must not look like leaving.
+    it("fires no Leave/Enter events on the user's buffer or window, but the float's own", function()
+      local ubuf = vim.api.nvim_get_current_buf()
+      local uwin = vim.api.nvim_get_current_win()
+      vim.wo[uwin].eventignorewin = ""
+      contextmenu.is_enabled = function()
+        return true
+      end
+      contextmenu.open = function()
+        local fbuf = vim.api.nvim_create_buf(false, true)
+        local fwin = vim.api.nvim_open_win(fbuf, true, {
+          relative = "editor",
+          row = 1,
+          col = 1,
+          width = 10,
+          height = 3,
+        })
+        return {
+          close = function()
+            vim.api.nvim_win_close(fwin, true)
+          end,
+        }
+      end
+      local user_hits, float_enters, new_wins = {}, 0, 0
+      local group = vim.api.nvim_create_augroup("UiMenuWarmSpec", { clear = true })
+      vim.api.nvim_create_autocmd({ "BufLeave", "WinLeave", "BufEnter", "WinEnter" }, {
+        group = group,
+        callback = function(a)
+          if a.buf == ubuf or vim.api.nvim_get_current_win() == uwin then
+            table.insert(user_hits, a.event)
+          elseif a.event == "BufEnter" then
+            float_enters = float_enters + 1
+          end
+        end,
+      })
+      vim.api.nvim_create_autocmd("WinNew", {
+        group = group,
+        callback = function()
+          new_wins = new_wins + 1
+        end,
+      })
+      local ok = menu.warm()
+      vim.api.nvim_del_augroup_by_id(group)
+      assert.is_true(ok)
+      assert.same({}, user_hits)
+      -- What lazy plugins may load on still happens: a new window, its buffer entered.
+      assert.equals(1, new_wins)
+      assert.equals(1, float_enters)
+      -- Nothing is left behind on the user's window.
+      assert.equals("", vim.wo[uwin].eventignorewin)
+      assert.equals(uwin, vim.api.nvim_get_current_win())
+    end)
+
+    it("keeps the user's own eventignorewin, also when the open raised", function()
+      local uwin = vim.api.nvim_get_current_win()
+      vim.wo[uwin].eventignorewin = "CursorMoved"
+      contextmenu.is_enabled = function()
+        return true
+      end
+      contextmenu.open = function()
+        error("boom")
+      end
+      assert.is_false(menu.warm())
+      assert.equals("CursorMoved", vim.wo[uwin].eventignorewin)
+      vim.wo[uwin].eventignorewin = ""
+    end)
+
     it("does not report success when the open raised", function()
       contextmenu.is_enabled = function()
         return true
