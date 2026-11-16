@@ -861,10 +861,17 @@ end
 ---Toggle between configured themes
 ---@param _args string[] # Unused: these subcommands take no argument
 local function ui_toggle(_args)
-  local next_theme = theme.toggle_theme()
+  local next_theme, failed = theme.toggle_theme()
 
   if next_theme then
     notify.info(prefix(ICON.theme, ("Theme changed to: %s"):format(next_theme)))
+  elseif failed then
+    -- The pair is configured; the theme it would switch to is not installed
+    -- (or its colorscheme raised). Saying "not configured" sent people to the
+    -- wrong place.
+    notify.warn(
+      ("Could not load theme '%s' of theme_toggle (is the colorscheme installed?)"):format(failed)
+    )
   else
     notify.warn("No theme_toggle configured.\n" .. "Add at least two themes to theme_toggle.")
   end

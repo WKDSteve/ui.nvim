@@ -100,6 +100,7 @@ end
 
 ---Toggle between the two themes named in `theme_toggle`.
 ---@return string|nil next_theme
+---@return string|nil failed # on nil: the theme that could not be loaded; nil when fewer than two are configured
 function M.toggle_theme()
   local pair = active_theme_cfg().theme_toggle
 
@@ -119,7 +120,7 @@ function M.toggle_theme()
   if M.load_theme(next_theme) then
     return next_theme
   end
-  return nil
+  return nil, next_theme
 end
 
 -----------------------------------------------------------------------

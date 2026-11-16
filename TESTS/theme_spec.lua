@@ -125,4 +125,32 @@ describe("ui.bindings.usrcmds.themes", function()
       "mutating a previous get_info() result must not leak into the next call"
     )
   end)
+
+  -- A configured pair whose next theme is not installed used to answer "No
+  -- theme_toggle configured", which sent people to the wrong place.
+  it("toggle_theme names the theme of the pair that could not be loaded", function()
+    local config = require("ui.config")
+    config.setup({ theme = { theme_toggle = { "default", "definitely_not_a_real_colorscheme" } } })
+    themes.load_theme("default")
+    local next_theme, failed = themes.toggle_theme()
+    assert.is_nil(next_theme)
+    assert.equals("definitely_not_a_real_colorscheme", failed)
+
+    local said = {}
+    local orig = vim.notify
+    vim.notify = function(msg)
+      said[#said + 1] = msg
+    end
+    require("ui.bindings.usrcmds").setup()
+    local ok, err = pcall(vim.cmd, "UI toggle")
+    vim.notify = orig
+    assert.is_true(ok, err)
+    local text = table.concat(said, "\n")
+    assert.truthy(text:find("Could not load theme 'definitely_not_a_real_colorscheme'", 1, true))
+    assert.is_nil(text:find("No theme_toggle configured", 1, true))
+
+    config.setup({ theme = { theme_toggle = { "default" } } })
+    assert.is_nil(select(2, themes.toggle_theme()), "fewer than two themes: nothing failed to load")
+    config.setup({})
+  end)
 end)
