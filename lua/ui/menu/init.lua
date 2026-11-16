@@ -159,13 +159,21 @@ local function quiet_user_window(win, buf)
     return function() end
   end
   local saved = vim.wo[win].eventignorewin
+  local quieted = join_events(saved, NEW_WIN_EVENTS)
+  -- Windows that got `quieted`: one the open left standing (opened without
+  -- focus, never entered) must not keep it.
+  local made = {}
   local group = vim.api.nvim_create_augroup("UiMenuWarmQuiet", { clear = true })
   vim.api.nvim_create_autocmd("WinNew", {
     group = group,
     callback = function()
-      pcall(function()
-        vim.wo[0].eventignorewin = join_events(saved, NEW_WIN_EVENTS)
-      end)
+      local cur = vim.api.nvim_get_current_win()
+      if cur ~= win then
+        made[#made + 1] = cur
+        pcall(function()
+          vim.wo[cur].eventignorewin = quieted
+        end)
+      end
     end,
   })
   vim.api.nvim_create_autocmd("BufEnter", {
@@ -184,6 +192,11 @@ local function quiet_user_window(win, buf)
     pcall(vim.api.nvim_del_augroup_by_id, group)
     if vim.api.nvim_win_is_valid(win) then
       vim.wo[win].eventignorewin = saved
+    end
+    for _, w in ipairs(made) do
+      if vim.api.nvim_win_is_valid(w) and vim.wo[w].eventignorewin == quieted then
+        vim.wo[w].eventignorewin = saved
+      end
     end
   end
 end

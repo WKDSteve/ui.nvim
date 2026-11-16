@@ -1135,6 +1135,28 @@ describe("ui.menu", function()
       assert.equals(uwin, vim.api.nvim_get_current_win())
     end)
 
+    it("leaves no ignored events on a window the open made and did not close", function()
+      local uwin = vim.api.nvim_get_current_win()
+      vim.wo[uwin].eventignorewin = ""
+      local side
+      contextmenu.is_enabled = function()
+        return true
+      end
+      contextmenu.open = function()
+        side = vim.api.nvim_open_win(vim.api.nvim_create_buf(false, true), false, {
+          relative = "editor",
+          row = 1,
+          col = 1,
+          width = 10,
+          height = 3,
+        })
+        return { close = function() end }
+      end
+      assert.is_true(menu.warm())
+      assert.equals("", vim.wo[side].eventignorewin)
+      vim.api.nvim_win_close(side, true)
+    end)
+
     it("keeps the user's own eventignorewin, also when the open raised", function()
       local uwin = vim.api.nvim_get_current_win()
       vim.wo[uwin].eventignorewin = "CursorMoved"
