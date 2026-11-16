@@ -111,6 +111,26 @@ describe("ui.colorpicker", function()
     assert.is_false(vim.api.nvim_win_is_valid(surf.winid))
   end)
 
+  -- A UI-attached editor fires CursorMoved once the picker's window is drawn, for the
+  -- cell the cursor was parked on: that used to replace the exact start colour with the
+  -- grid's quantised neighbour (#3366cc -> #3466cb) before the user moved at all.
+  it("keeps the exact start colour on the CursorMoved of the parked cursor", function()
+    vim.cmd("new")
+    local surf = picker.open({ hex = "#3366cc" })
+    local parked = vim.api.nvim_win_get_cursor(surf.winid)
+    vim.api.nvim_exec_autocmds("CursorMoved", { buffer = surf.bufnr })
+    assert.equals("#3366cc", picker.current())
+    -- A real move follows the grid, and so does a move back onto the parked cell.
+    vim.api.nvim_win_set_cursor(surf.winid, { 1, 0 })
+    vim.api.nvim_exec_autocmds("CursorMoved", { buffer = surf.bufnr })
+    assert.equals("#ff0000", picker.current())
+    vim.api.nvim_win_set_cursor(surf.winid, parked)
+    vim.api.nvim_exec_autocmds("CursorMoved", { buffer = surf.bufnr })
+    assert.are_not.equals("#ff0000", picker.current())
+    assert.are_not.equals("#3366cc", picker.current())
+    vim.api.nvim_feedkeys("q", "x", false)
+  end)
+
   it("hands the pick to on_pick instead when given one", function()
     vim.cmd("new")
     local got

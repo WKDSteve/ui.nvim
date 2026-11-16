@@ -116,6 +116,7 @@ end
 ---@field surf Ui.Kit.Surface|nil
 ---@field origin { buf: integer, win: integer, row: integer, col: integer, s: integer|nil, e: integer|nil }
 ---@field on_pick fun(hex: string)|nil
+---@field parked? integer[]    # (1,0)-based cursor `open` put on the start colour's cell, until the cursor leaves it
 
 local CELL = "  "
 local ROW_HUE = 0
@@ -246,6 +247,17 @@ end
 local function on_cursor(state)
   if not state.surf or not state.surf:is_valid() then
     return
+  end
+  -- The first CursorMoved after opening reports the cell `cursor_to` parked
+  -- the cursor on, not a move of the user (a UI-attached editor fires it once
+  -- the window is drawn): the pick stays the exact start colour until the
+  -- cursor really leaves that cell.
+  if state.parked then
+    local pos = api.nvim_win_get_cursor(state.surf.winid)
+    if pos[1] == state.parked[1] and pos[2] == state.parked[2] then
+      return
+    end
+    state.parked = nil
   end
   local cell, row = cell_at_cursor(state)
   if not cell then
@@ -407,6 +419,7 @@ function M.open(opts)
   -- start colour until the cursor moves: opening on `#123456` and pressing
   -- `<CR>` must give `#123456` back, not the grid's quantised neighbour.
   cursor_to(state, start)
+  state.parked = api.nvim_win_get_cursor(surf.winid)
   state.pick = start
   state.base = start
   layout(state)
