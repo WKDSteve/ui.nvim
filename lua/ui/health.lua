@@ -430,6 +430,15 @@ local function check_context()
     end
   end
 
+  -- What the last setup() (or a saved state file) had rejected. `ui.context` is
+  -- not in `ui.util.config.MODULES`: that list must load nothing, and this
+  -- section requires the module anyway.
+  if type(context.issues) == "function" then
+    for _, issue in ipairs(context.issues()) do
+      health.warn("ui.context: " .. issue)
+    end
+  end
+
   local buf = vim.api.nvim_get_current_buf()
   local ft = vim.bo[buf].filetype
   local has_parser = ft ~= "" and pcall(vim.treesitter.get_parser, buf)

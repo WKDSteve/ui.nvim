@@ -23,6 +23,8 @@ Behavior changes of ui.nvim that a user or a host config can notice. The format 
 
 - `ui.colorpicker`, `ui.keys`, `ui.menu`, `ui.notify`, `ui.vim_ui` (`enable()`), `ui.windowpicker` and `ui.zen` keep their options in a `lib.lua.config.new` store (`ui.util.config`): an unknown key gets a did-you-mean warning and a value of the wrong type (or out of range) falls back to its default instead of being taken as is; each module has `issues()`, and `:checkhealth ui` lists them under "Module options". `ui.notify` takes level names (`min_level = "warn"`, `timeouts = { error = 8000 }`).
 
+- `ui.context` (sticky context) keeps its options in the same kind of store, with two layers: `setup` and, above it, `commands` (what `:UI sticky depth`/`lines` and the state file set). A second `setup()` no longer merges onto the first: an option it leaves out is back at its default. A value of the wrong type falls back to the default (it used to keep the previous value) and is warned about once; `ui.context.issues()` and the Context section of `:checkhealth ui` list it. `:UI sticky reset` drops the `commands` layer.
+
 ### Fixed
 
 - `:UI toggle`: when the theme the `theme_toggle` pair would switch to is not installed, the warning names it ("Could not load theme '...' of theme_toggle") instead of claiming that no pair is configured.

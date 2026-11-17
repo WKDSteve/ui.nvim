@@ -64,7 +64,12 @@ headings = { enable = true, max_level = 6, icons = {...} },
 persist = false, state_file = nil, style = "mimic",
 chips = { layout = "row", shape = "rounded_chip" }, position = { anchor = "top" } }`)
 to override them; `:UI sticky` (`:UI context` is the older spelling) toggles
-it for the session either way.
+it for the session either way. Like the modules under
+[Module options](health.md#module-options), every `setup()` of `ui.context`
+starts from the shipped defaults (an option a later call leaves out is back at
+its default), and an unknown key or a value of the wrong type is warned about
+once and left out, so its default applies; `:checkhealth ui` lists it under
+"Context".
 
 **Where it sits (`position`) and how it looks (`style`/`chips`).**
 
@@ -164,7 +169,9 @@ configured values and deletes the file. A saved value wins over the
 configuration until reset -- if you edit the configured `max_lines` and see no
 effect, `:UI sticky status` shows the override that covers it. A `setup` that
 restates `max_lines` or `headings.max_level` without `persist` replaces the
-command's value for that setting.
+command's value for that setting. Internally the two are layers of one
+`lib.lua.config` store: `setup` below `commands`, so a `setup()` that does
+not mention a value keeps the command's override for it.
 
 The file is treated as untrusted input and `state_file` as a path that may be
 wrong:

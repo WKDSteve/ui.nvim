@@ -653,15 +653,78 @@ describe("ui.context", function()
       assert.equals(9, vim.api.nvim_win_get_cursor(win)[1])
     end)
 
-    it("setup clamps max_level into 1..6 and ignores a value of the wrong type", function()
+    it("setup clamps max_level into 1..6 and reports a value of the wrong type", function()
       context.setup({ headings = { max_level = 99 } })
       assert.equals(6, context.config().headings.max_level)
       context.setup({ headings = { max_level = 0 } })
       assert.equals(1, context.config().headings.max_level)
       context.setup({ headings = { max_level = "deep" } })
-      assert.equals(1, context.config().headings.max_level, "kept the previous value")
+      assert.equals(6, context.config().headings.max_level, "the default applies")
+      assert.is_truthy(vim.iter(context.issues()):any(function(line)
+        return line:find("headings.max_level", 1, true) ~= nil
+      end))
+      context.setup({ max_lines = 5 })
       context.setup({ max_lines = -3 })
-      assert.equals(3, context.config().max_lines, "a negative row cap is refused")
+      assert.equals(
+        3,
+        context.config().max_lines,
+        "a negative row cap is refused, the default applies"
+      )
+      assert.is_truthy(context.issues()[1]:find("max_lines", 1, true))
+    end)
+
+    describe("config layers", function()
+      it("every setup starts from the defaults", function()
+        context.setup({
+          trim = "inner",
+          style = "chips",
+          position = { anchor = "bottom-right", row = 2 },
+        })
+        assert.equals("inner", context.config().trim)
+        context.setup({ min_window_height = 6 })
+        assert.equals(
+          "outer",
+          context.config().trim,
+          "an option the second call leaves out is back at its default"
+        )
+        assert.equals("mimic", context.config().style)
+        assert.same({ anchor = "top" }, context.config().position)
+      end)
+
+      it("a command's override survives a setup that does not state the value", function()
+        context.setup({ max_lines = { default = 2, markdown = 5 }, headings = { max_level = 4 } })
+        context.set_max_level(2)
+        context.set_max_lines(1, "markdown")
+        context.setup({ max_lines = { default = 2, markdown = 5 }, trim = "inner" })
+        assert.equals(2, context.config().headings.max_level, "depth override kept")
+        assert.equals(
+          "2 (markdown 5)",
+          context.describe_max_lines(),
+          "stating max_lines replaced the lines override"
+        )
+        assert.equals("depth 2", context.describe_overrides())
+        assert.is_true(context.reset())
+        assert.equals(
+          6,
+          context.config().headings.max_level,
+          "reset returns to the configuration, which no longer states a depth"
+        )
+      end)
+
+      it("position is replaced as a whole and a bad anchor is reported", function()
+        context.setup({ position = { anchor = "nowhere", col = 3.7 } })
+        assert.same({ col = 3 }, { col = context.config().position.col })
+        assert.equals("top", context.config().position.anchor)
+        assert.is_truthy(vim.iter(context.issues()):any(function(line)
+          return line:find("position", 1, true) ~= nil
+        end))
+      end)
+
+      it("headings = false is headings.enable = false", function()
+        context.setup({ headings = false })
+        assert.is_false(context.config().headings.enable)
+        assert.equals(6, context.config().headings.max_level)
+      end)
     end)
 
     it("set_max_lines edits one filetype or the default, describe_max_lines shows both", function()

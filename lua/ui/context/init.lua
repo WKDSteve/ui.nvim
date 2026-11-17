@@ -155,9 +155,13 @@ local MAX_HEADING_LEVEL = 6
 ---@field style "mimic"|"chips"        # how the pinned entries are drawn
 ---@field chips { layout: "row"|"stack", shape: Ui.Kit.Preset } # only read when style = "chips"
 ---@field position Ui.Context.Position # where the overlay sits
-local cfg = {
+
+--- The shipped tunables. `max_lines` is kept as a map here (the form the layers
+--- merge entry by entry); `resolve` turns a map that only holds `default` back
+--- into the plain number.
+local DEFAULTS = {
   persist = false,
-  max_lines = DEFAULT_MAX_LINES,
+  max_lines = { default = DEFAULT_MAX_LINES },
   trim = "outer",
   min_window_height = 6,
   debounce_ms = 30,
@@ -277,17 +281,161 @@ local ANCHORS = {
   ["bottom-center"] = { v = "bottom", h = "center" },
 }
 
+---@type string[]
+local ANCHOR_NAMES = vim.tbl_keys(ANCHORS)
+table.sort(ANCHOR_NAMES)
+
 ---@type boolean
 local enabled = false
 
---- What the host's configuration set for the two values `:UI sticky depth` and
---- `lines` change, so `reset` can go back to it.
----@type { max_level: integer, max_lines: integer|table<string, integer> }
-local configured = { max_level = MAX_HEADING_LEVEL, max_lines = DEFAULT_MAX_LINES }
+--- Scope verdict per node type, cleared whenever the configuration changes.
+---@type table<string, boolean>
+local scope_cache = {}
 
---- What commands changed on top of `configured`; this is what `persist` writes out.
+--- What `:UI sticky depth` / `lines` changed, in the saved form: the `commands`
+--- layer of the config store, and what `persist` writes out.
 ---@type Ui.Context.Saved
 local overrides = {}
+
+---@internal
+---A `max_lines` value if it is a non-negative number, else nil. `math.huge`
+---means "no limit", which is what 0 says and what a JSON file can hold.
+---@param v any
+---@return integer|nil
+local function as_line_count(v)
+  if type(v) == "number" and v >= 0 then
+    return v == math.huge and 0 or math.floor(v)
+  end
+  return nil
+end
+
+---@internal
+---A heading level clamped into 1..6, or nil for anything that is not a number.
+---@param v any
+---@return integer|nil
+local function as_heading_level(v)
+  if type(v) ~= "number" or v ~= v then
+    return nil
+  end
+  return math.min(math.max(math.floor(v), 1), MAX_HEADING_LEVEL)
+end
+
+---@internal
+---The liberal forms a layer may use, made canonical before the schema check:
+---a plain `max_lines` number becomes `{ default = n }` (the map the layers merge
+---entry by entry), `headings = true/false` means `headings.enable`, a level is
+---clamped into 1..6, an old chip shape name is mapped onto its preset, a
+---`position` without a valid anchor gets `"top"`, and `state_file` is resolved
+---once, against the cwd at `setup`.
+---@param opts table  a private copy of the layer's options
+---@param issues string[]
+---@return table
+local function normalize(opts, issues)
+  local describe = require("lib.lua.config.schema").describe_got
+  local ml = opts.max_lines
+  if type(ml) == "table" then
+    local map = {}
+    for ft, n in pairs(ml) do
+      local count = type(ft) == "string" and as_line_count(n) or nil
+      if count then
+        map[ft] = count
+      else
+        issues[#issues + 1] = ("option 'max_lines.%s' must be a number >= 0, got %s -- ignored"):format(
+          tostring(ft),
+          describe(n)
+        )
+      end
+    end
+    opts.max_lines = map
+  elseif ml ~= nil then
+    local count = as_line_count(ml)
+    if not count then
+      issues[#issues + 1] = ("option 'max_lines' must be a number >= 0 or a table of them, got %s -- using the default"):format(
+        describe(ml)
+      )
+    end
+    opts.max_lines = count and { default = count } or nil
+  end
+  local h = opts.headings
+  if type(h) == "boolean" then
+    opts.headings = { enable = h }
+  elseif type(h) == "table" and type(h.max_level) == "number" then
+    h.max_level = as_heading_level(h.max_level) or h.max_level
+  end
+  if type(opts.chips) == "table" and opts.chips.shape ~= nil then
+    opts.chips.shape = presets.normalize(opts.chips.shape, "ui.context")
+  end
+  local p = opts.position
+  if type(p) == "table" then
+    -- `position` is replaced as a whole, so a rejected anchor would leave none:
+    -- fall back to the default one here instead.
+    if p.anchor ~= nil and ANCHORS[p.anchor] == nil then
+      issues[#issues + 1] = ("option 'position.anchor' must be one of %s, got %s -- using \"top\""):format(
+        table.concat(ANCHOR_NAMES, ", "),
+        describe(p.anchor)
+      )
+      p.anchor = nil
+    end
+    p.anchor = p.anchor or "top"
+    for _, k in ipairs({ "row", "col" }) do
+      if type(p[k]) == "number" and p[k] == p[k] then
+        p[k] = math.floor(p[k])
+      end
+    end
+  end
+  if opts.state_file == "" then
+    opts.state_file = nil
+  elseif type(opts.state_file) == "string" then
+    opts.state_file = state.resolve(opts.state_file)
+  end
+  return opts
+end
+
+---@type Ui.Context.Config
+local cfg
+
+--- The config store. Two layers, `setup` below `commands`: what the host's
+--- configuration says, and what `:UI sticky depth` / `lines` changed on top of
+--- it. Every change recomputes from DEFAULTS, so an option a later `setup()`
+--- leaves out is back at its default; `reset` drops the `commands` layer.
+local store = require("ui.util.config").new("ui.context", DEFAULTS, {
+  layers = { "setup", "commands" },
+  merge = { max_lines = "entries", position = "replace" },
+  schema = {
+    max_lines = { "table", of = { "number", min = 0 } },
+    trim = { "string", enum = { "outer", "inner" } },
+    ["headings.max_level"] = { "number", min = 1, max = MAX_HEADING_LEVEL },
+    ["headings.icons"] = { "table|false", of = "string" },
+    style = { "string", enum = { "mimic", "chips" } },
+    ["chips.layout"] = { "string", enum = { "row", "stack" } },
+    ["chips.shape"] = { "string", enum = presets.PRESETS },
+    position = {
+      "table",
+      fields = {
+        anchor = { "string", enum = ANCHOR_NAMES },
+        row = "number",
+        col = "number",
+      },
+    },
+  },
+  optional = { state_file = "string" },
+  normalize = normalize,
+  resolve = function(c)
+    local ml = c.max_lines
+    if type(ml) == "table" then
+      if next(ml) == nil then
+        c.max_lines = DEFAULT_MAX_LINES
+      elseif next(ml, next(ml)) == nil and ml.default ~= nil then
+        c.max_lines = ml.default
+      end
+    end
+  end,
+  on_change = function(current)
+    cfg = current
+    scope_cache = {}
+  end,
+})
+cfg = store.get()
 
 --- Whether the last write to (or delete of) the state file failed, so a
 --- confirmation does not claim a save that did not happen.
@@ -425,9 +573,6 @@ local function ensure_groups()
 end
 
 -- ---------------------------------------------------------------- scope detection
-
----@type table<string, boolean>
-local scope_cache = {}
 
 ---@internal
 ---A `node_types` entry that is anchored at both ends (`^if_expression$`) names
@@ -1493,29 +1638,6 @@ end
 -- ---------------------------------------------------------------- lifecycle
 
 ---@internal
----A `max_lines` value if it is a non-negative number, else nil. `math.huge`
----means "no limit", which is what 0 says and what a JSON file can hold.
----@param v any
----@return integer|nil
-local function as_line_count(v)
-  if type(v) == "number" and v >= 0 then
-    return v == math.huge and 0 or math.floor(v)
-  end
-  return nil
-end
-
----@internal
----A heading level clamped into 1..6, or nil for anything that is not a number.
----@param v any
----@return integer|nil
-local function as_heading_level(v)
-  if type(v) ~= "number" then
-    return nil
-  end
-  return math.min(math.max(math.floor(v), 1), MAX_HEADING_LEVEL)
-end
-
----@internal
 ---Write `overrides` to the state file, or delete the file once nothing is
 ---overridden. Does nothing unless `persist` is on. A failure is a warning, never
 ---an error: the value is set for this session either way.
@@ -1551,153 +1673,39 @@ local function redraw()
 end
 
 ---@internal
----Apply the tunables in `opts` to `cfg`, without redrawing. A value of the wrong
----type is ignored, the previous one stays.
----@param opts Ui.Context.Opts
----@return boolean lines_set, boolean level_set # whether `max_lines` / `headings.max_level` were taken from `opts`
-local function apply(opts)
-  local lines_set, level_set = false, false
-  if type(opts.max_lines) == "table" then
-    local map = {}
-    for ft, n in pairs(opts.max_lines) do
-      local count = type(ft) == "string" and as_line_count(n) or nil
-      if count then
-        map[ft] = count
-      end
-    end
-    cfg.max_lines = map
-    lines_set = true
-  elseif as_line_count(opts.max_lines) then
-    cfg.max_lines = as_line_count(opts.max_lines)
-    lines_set = true
-  end
-  for _, k in ipairs({
-    "trim",
-    "min_window_height",
-    "debounce_ms",
-    "line_numbers",
-    "zindex",
-  }) do
-    if opts[k] ~= nil then
-      cfg[k] = opts[k]
-    end
-  end
-  if opts.headings ~= nil then
-    local h = opts.headings
-    if type(h) == "boolean" then
-      cfg.headings.enable = h
-    elseif type(h) == "table" then
-      if h.enable ~= nil then
-        cfg.headings.enable = h.enable
-      end
-      local level = as_heading_level(h.max_level)
-      if level then
-        cfg.headings.max_level = level
-        level_set = true
-      end
-      if h.icons ~= nil then
-        cfg.headings.icons = h.icons
-      end
-    end
-  end
-  for _, k in ipairs({ "node_types", "exclude_node_types", "exclude_filetypes" }) do
-    if type(opts[k]) == "table" then
-      cfg[k] = vim.deepcopy(opts[k])
-    end
-  end
-  if opts.style == "mimic" or opts.style == "chips" then
-    cfg.style = opts.style
-  end
-  if type(opts.chips) == "table" then
-    local c = opts.chips
-    if c.layout == "row" or c.layout == "stack" then
-      cfg.chips.layout = c.layout
-    end
-    local shape = presets.normalize(c.shape, "ui.context")
-    if presets.is_preset(shape) then
-      cfg.chips.shape = shape
-    end
-  end
-  if type(opts.position) == "table" then
-    -- Replaces the whole table rather than merging into it: "where it goes"
-    -- is one decision, not three independent ones, and a merge would leave
-    -- a stale `row`/`col` from an earlier `setup()` call in effect after an
-    -- anchor-only one.
-    local p = opts.position
-    cfg.position = {
-      anchor = (p.anchor ~= nil and ANCHORS[p.anchor] ~= nil) and p.anchor or "top",
-      row = type(p.row) == "number" and math.floor(p.row) or nil,
-      col = type(p.col) == "number" and math.floor(p.col) or nil,
-    }
-  end
-  scope_cache = {}
-  return lines_set, level_set
-end
-
----@internal
----Set the row cap for `ft`, or for every filetype without an entry when `ft`
----is nil. Refuses what is not a non-negative number, since `apply` would drop it
----and, with it, the entry it was meant to replace.
----@param n any
----@param ft string|nil
----@return integer|nil applied
-local function assign_max_lines(n, ft)
-  local count = as_line_count(n)
-  if not count then
-    return nil
-  end
-  local cur = cfg.max_lines
-  if ft then
-    local map = type(cur) == "table" and vim.deepcopy(cur) or { default = cur }
-    map[ft] = count
-    apply({ max_lines = map })
-  elseif type(cur) == "table" then
-    local map = vim.deepcopy(cur)
-    map.default = count
-    apply({ max_lines = map })
-  else
-    apply({ max_lines = count })
-  end
-  return count
-end
-
----@internal
----Put `overrides` on top of the current values.
+---Hand `overrides` to the store as the `commands` layer (nil when empty).
 ---@return nil
-local function reapply_overrides()
-  if overrides.max_level then
-    apply({ headings = { max_level = overrides.max_level } })
+local function push_overrides()
+  if next(overrides) == nil then
+    store.layer("commands", nil)
+    return
   end
-  for ft, n in pairs(overrides.lines or {}) do
-    assign_max_lines(n, ft ~= "default" and ft or nil)
-  end
+  store.layer("commands", {
+    headings = overrides.max_level and { max_level = overrides.max_level } or nil,
+    max_lines = overrides.lines,
+  })
 end
 
----Override the shipped tunables. Safe before or after `enable()`. A value of
----the wrong type is ignored, the previous one stays.
+---Set the tunables. Safe before or after `enable()`. Every call starts from the
+---shipped defaults: an option an earlier call set and this one leaves out is
+---back at its default. An unknown key or a value of the wrong type is reported
+---once and left out, so its default applies (`M.issues()`, `:checkhealth ui`).
 ---
 ---Stating `max_lines` or `headings.max_level` here is stating the host's
----configuration: it becomes what `reset()` returns to, and replaces an override a
----command made earlier for that value. With `persist = true` (or a `state_file`)
----in `opts`, the saved overrides are read from the state file and applied on top.
+---configuration: it replaces an override a command made earlier for that value.
+---With `persist = true` (or a `state_file`) in `opts`, the saved overrides are
+---read from the state file and applied on top.
 ---@param opts Ui.Context.Opts|nil
 function M.setup(opts)
   opts = opts or {}
-  local lines_set, level_set = apply(opts)
-  if lines_set then
-    configured.max_lines = vim.deepcopy(cfg.max_lines)
+  local h = opts.headings
+  if type(opts.max_lines) == "table" or as_line_count(opts.max_lines) then
     overrides.lines = nil
   end
-  if level_set then
-    configured.max_level = cfg.headings.max_level
+  if type(h) == "table" and as_heading_level(h.max_level) then
     overrides.max_level = nil
   end
-  if opts.persist ~= nil then
-    cfg.persist = opts.persist == true
-  end
-  if type(opts.state_file) == "string" and opts.state_file ~= "" then
-    cfg.state_file = state.resolve(opts.state_file)
-  end
+  store.setup(opts)
   if cfg.persist and (opts.persist ~= nil or opts.state_file ~= nil) then
     save_failed = false
     local saved = state.read(M.state_path())
@@ -1705,11 +1713,18 @@ function M.setup(opts)
       overrides = saved
     end
   end
-  reapply_overrides()
+  push_overrides()
   if enabled then
     build_refresher()
     redraw()
   end
+end
+
+---What the last `setup()` (and the saved overrides) dropped or degraded: one
+---line per unknown key or rejected value.
+---@return string[]
+function M.issues()
+  return store.issues()
 end
 
 ---Turn the overlay on: highlight groups, autocmds, a first refresh.
@@ -1784,9 +1799,10 @@ end
 ---@param level integer  clamped into 1..6
 ---@return integer applied
 function M.set_max_level(level)
-  local _, level_set = apply({ headings = { max_level = level } })
-  if level_set then
-    overrides.max_level = cfg.headings.max_level
+  local applied = as_heading_level(level)
+  if applied then
+    overrides.max_level = applied
+    push_overrides()
     persist_overrides()
     redraw()
   end
@@ -1796,18 +1812,19 @@ end
 ---Set the row cap. With `ft` it sets that filetype's entry and leaves the
 ---rest alone; without, it sets the number every filetype falls back to
 ---(`default`, or the plain number when no table is in use). A value that is
----not a non-negative number changes nothing -- `apply` would drop it and, with
----it, the entry it was meant to replace.
+---not a non-negative number changes nothing: the entry it was meant to
+---replace stays.
 ---@param n integer
 ---@param ft string|nil
 ---@return boolean applied
 function M.set_max_lines(n, ft)
-  local count = assign_max_lines(n, ft)
+  local count = as_line_count(n)
   if not count then
     return false
   end
   overrides.lines = overrides.lines or {}
   overrides.lines[ft or "default"] = count
+  push_overrides()
   persist_overrides()
   redraw()
   return true
@@ -1819,7 +1836,7 @@ end
 function M.reset()
   local had = next(overrides) ~= nil
   overrides = {}
-  apply({ max_lines = configured.max_lines, headings = { max_level = configured.max_level } })
+  push_overrides()
   persist_overrides()
   redraw()
   return had

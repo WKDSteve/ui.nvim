@@ -279,6 +279,13 @@ describe("ui.health", function()
       assert.is_true(has(capture(), "info", "ui.context is off"))
     end)
 
+    it("warns about an option the last setup() rejected", function()
+      context.setup({ max_lnes = 4 })
+      assert.is_true(has(capture(), "warn", "ui.context: setup layer: unknown option 'max_lnes'"))
+      context.setup({})
+      assert.is_false(has(capture(), "warn", "ui.context: unknown option"))
+    end)
+
     it("reports a plain max_lines and the heading depth", function()
       context.enable()
       assert.is_true(has(capture(), "ok", "ui.context is on (max_lines 3, heading depth 6"))
