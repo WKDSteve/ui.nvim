@@ -156,16 +156,136 @@ describe("ui.screenkey.subscribe", function()
     wipe(buf)
   end)
 
-  it("scope normal shows the command line (:w<CR>)", function()
+  it("scope normal shows the key that opens the command line, never what is typed there", function()
     local _, normal = sub_of({ scope = "normal" })
-    feed(":let g:ui_sk_spec = 1<CR>")
+    local _, protected = sub_of({ scope = "insert_protected" })
+    local _, all = sub_of({ scope = "all" })
+    feed(":let g:ui_sk_spec = 'tok'<CR>")
+    feed("j")
     vim.wait(300, function()
-      return #normal > 0 and normal[#normal].key == "<CR>"
+      return #all > 0 and all[#all].key == "j"
     end)
-    assert.equals(1, vim.g.ui_sk_spec)
+    assert.equals("tok", vim.g.ui_sk_spec)
     vim.g.ui_sk_spec = nil
-    assert.equals(":", normal[1].key)
-    assert.equals("<CR>", normal[#normal].key)
+    -- `:` is a Normal-mode key; `let ...<CR>` is typed on the command line
+    assert.equals(": j", keys_of(normal))
+    assert.truthy(keys_of(protected):find("' t o k ' <CR> j", 1, true), keys_of(protected))
+    assert.truthy(keys_of(all):find("' t o k ' <CR> j", 1, true), keys_of(all))
+  end)
+
+  it("scope normal leaves out a search", function()
+    local buf = vim.api.nvim_create_buf(false, true)
+    vim.api.nvim_set_current_buf(buf)
+    vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "a", "secret" })
+    local _, normal = sub_of({ scope = "normal" })
+    local _, all = sub_of({ scope = "all" })
+    feed("/secret<CR>")
+    feed("k")
+    vim.wait(300, function()
+      return #all > 0 and all[#all].key == "k"
+    end)
+    assert.equals("/ k", keys_of(normal))
+    wipe(buf)
+  end)
+
+  it("scope normal leaves out Select mode (a snippet placeholder being overwritten)", function()
+    local buf = vim.api.nvim_create_buf(false, true)
+    vim.api.nvim_set_current_buf(buf)
+    vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "placeholder" })
+    local _, normal = sub_of({ scope = "normal" })
+    local _, all = sub_of({ scope = "all" })
+    -- `v` `l` in Visual mode, <C-g> switches to Select, `x` is typed over the selection
+    feed("vl<C-g>x")
+    vim.wait(300, function()
+      return #all >= 4
+    end)
+    assert.equals("xaceholder", vim.api.nvim_buf_get_lines(buf, 0, 1, false)[1])
+    assert.equals("v l <C-G>", keys_of(normal))
+    assert.truthy(keys_of(all):find("<C-G> x", 1, true), keys_of(all))
+    vim.cmd("stopinsert")
+    wipe(buf)
+  end)
+
+  it("insert_protected leaves out Terminal mode (a sudo/ssh password); all keeps it", function()
+    -- A real :terminal would start a shell, which the specs may not: the mode is what decides.
+    local get_mode = vim.api.nvim_get_mode
+    local _, normal = sub_of({ scope = "normal" })
+    local _, protected = sub_of({ scope = "insert_protected" })
+    local _, all = sub_of({ scope = "all" })
+    vim.api.nvim_get_mode = function()
+      return { mode = "t", blocking = false }
+    end
+    feed("j")
+    vim.api.nvim_get_mode = get_mode
+    feed("k")
+    vim.wait(300, function()
+      return #all == 2
+    end)
+    assert.equals("k", keys_of(normal))
+    assert.equals("k", keys_of(protected))
+    assert.equals("j k", keys_of(all))
+  end)
+
+  it("a mode that cannot be told counts as the most private one", function()
+    local get_mode = vim.api.nvim_get_mode
+    local _, protected = sub_of({ scope = "insert_protected" })
+    local _, all = sub_of({ scope = "all" })
+    vim.api.nvim_get_mode = function()
+      error("no mode")
+    end
+    feed("j")
+    vim.api.nvim_get_mode = get_mode
+    vim.wait(300, function()
+      return #all == 1
+    end)
+    assert.equals("", keys_of(protected))
+  end)
+
+  it("on_drop tells a subscriber that raised that it was removed", function()
+    local notify = vim.notify
+    vim.notify = function() end
+    local dropped
+    local bad = screenkey.subscribe(function()
+      error("boom")
+    end, {
+      on_drop = function(err)
+        dropped = tostring(err)
+      end,
+    })
+    subs[#subs + 1] = bad
+    feed("j")
+    vim.wait(300, function()
+      return dropped ~= nil
+    end)
+    vim.notify = notify
+    assert.truthy(dropped:find("boom", 1, true), dropped)
+    assert.is_false(bad:active())
+  end)
+
+  it("the HUD whose render() raised is off for real and can be enabled again", function()
+    local surface = require("ui.kit.surface")
+    local open = surface.open
+    local notify = vim.notify
+    vim.notify = function() end
+    surface.open = function()
+      error("no float")
+    end
+    screenkey.enable()
+    feed("j")
+    vim.wait(300, function()
+      return not screenkey.is_enabled()
+    end)
+    surface.open = open
+    vim.notify = notify
+    assert.is_false(screenkey.is_enabled())
+    assert.equals(0, screenkey.subscriber_count())
+    screenkey.enable()
+    feed("k")
+    vim.wait(300, function()
+      return screenkey.surface() ~= nil
+    end)
+    assert.is_true(screenkey.is_enabled())
+    assert.is_not_nil(screenkey.surface())
   end)
 
   for _, fn_name in ipairs({ "inputsecret", "input" }) do
@@ -275,6 +395,9 @@ describe("ui.screenkey.subscribe", function()
     assert.has_error(function()
       screenkey.subscribe(function() end, { max_entries = 0 })
     end, "ui.screenkey.subscribe: max_entries must be a positive integer, got 0")
+    assert.has_error(function()
+      screenkey.subscribe(function() end, { on_drop = 1 })
+    end, "ui.screenkey.subscribe: on_drop must be a function, got number")
     assert.equals(0, screenkey.subscriber_count())
   end)
 end)

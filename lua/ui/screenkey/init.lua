@@ -344,9 +344,9 @@ local function protected()
 end
 
 ---@alias Ui.Screenkey.Scope
----| "normal" # keys typed outside Insert, Replace and Terminal mode (Normal, Visual, Operator-pending, the command line)
----| "insert_protected" # every mode, but never a protected key (what the HUD shows)
----| "all" # every key, protected ones too
+---| "normal" # commands only: Normal, Visual, Operator-pending -- no Insert, Replace, Select, command-line or Terminal text
+---| "insert_protected" # every mode but Terminal, never a protected key (what the HUD shows)
+---| "all" # every key, protected ones and Terminal mode too
 
 --- One captured key as a subscriber sees it.
 ---@class Ui.Screenkey.Entry
@@ -361,6 +361,7 @@ end
 ---@field package _max integer|nil
 ---@field package _entries Ui.Screenkey.Entry[]
 ---@field package _live boolean
+---@field package _on_drop fun(err: any)|nil
 local Subscription = {}
 Subscription.__index = Subscription
 
@@ -401,6 +402,23 @@ end
 M.SCOPES = { "normal", "insert_protected", "all" }
 
 local CAPTURE_NS = vim.api.nvim_create_namespace("ui_screenkey_capture")
+
+--- The modes (first letter of `nvim_get_mode().mode`) whose keys are typed text rather than
+--- commands. `"normal"` leaves all of them out; `"insert_protected"` leaves out the terminal,
+--- where a `sudo`/`ssh`/`gpg` password prompt cannot be told from other text. The command line
+--- counts as text: `:let $TOKEN=...`, `:!curl -u user:pw`, a search for a secret -- and the
+--- right-hand side of a mapping that runs a command is typed there too. The key that opens it
+--- (`:`, `/`, `?`) is a Normal-mode key and stays. Select mode (`s`, `S`, `CTRL-S`) replaces the
+--- selection with what is typed (a snippet placeholder), so it is text as well.
+local MODE_KIND = {
+  i = "insert",
+  R = "insert",
+  s = "insert",
+  S = "insert",
+  ["\19"] = "insert",
+  c = "cmdline",
+  t = "terminal",
+}
 ---@type Ui.Screenkey.Subscription[]
 local subscribers = {}
 
@@ -446,11 +464,15 @@ local function on_key(key)
   local ok_mode, mode = pcall(function()
     return vim.api.nvim_get_mode().mode:sub(1, 1)
   end)
-  local insert_like = not ok_mode or mode == "i" or mode == "R" or mode == "t"
+  -- A mode that cannot be told counts as the most private one.
+  local kind = "terminal"
+  if ok_mode then
+    kind = MODE_KIND[mode] -- nil: a command mode (Normal, Visual, Operator-pending, ...)
+  end
   local accepts = {
     all = true,
-    insert_protected = not hidden,
-    normal = not hidden and not insert_like,
+    insert_protected = not hidden and kind ~= "terminal",
+    normal = not hidden and kind == nil,
   }
   vim.schedule(function()
     local ok, trans = pcall(vim.fn.keytrans, key)
@@ -470,6 +492,9 @@ local function on_key(key)
         if not fine then
           sub:unsubscribe()
           pcall(notify.warn, ("a key subscriber failed and was removed: %s"):format(tostring(err)))
+          if sub._on_drop then
+            pcall(sub._on_drop, err)
+          end
         end
       end
     end
@@ -503,17 +528,19 @@ end
 ---there is at least one subscription.
 ---
 ---`opts.scope` (default `"insert_protected"`) decides which keys a subscription gets:
----`"normal"` only keys typed outside Insert, Replace and Terminal mode, and never a
----protected one; `"insert_protected"` every mode but never a protected key; `"all"` every
+---`"normal"` only commands (Normal, Visual, Operator-pending mode; the `:` or `/` that opens
+---the command line, never what is typed there), and never a protected key;
+---`"insert_protected"` every mode but Terminal mode, never a protected key; `"all"` every
 ---key. A protected key is one typed into a secret `ui.kit` prompt or sheet, while
 ---`input()`/`inputsecret()` waits (command-line type `@`/`-`), into a `buftype=prompt`
----buffer or into a buffer of `setup({ hide = ... })`. `opts.max_entries` caps the list
----(default: the `max_entries` of `setup()`, read live).
+---buffer or into a buffer of `setup({ hide = ... })`. A password a plugin reads with
+---`getchar()` in a loop cannot be told from a command (known limit, every scope).
+---`opts.max_entries` caps the list (default: the `max_entries` of `setup()`, read live).
 ---
 ---A callback that raises is unsubscribed (and a warning shown), so one broken consumer
----cannot cost a message per keystroke.
+---cannot cost a message per keystroke; `opts.on_drop(err)` is called then.
 ---@param callback fun(entry: Ui.Screenkey.Entry, sub: Ui.Screenkey.Subscription)
----@param opts? { scope?: Ui.Screenkey.Scope, max_entries?: integer }
+---@param opts? { scope?: Ui.Screenkey.Scope, max_entries?: integer, on_drop?: fun(err: any) }
 ---@return Ui.Screenkey.Subscription
 function M.subscribe(callback, opts)
   if type(callback) ~= "function" then
@@ -533,6 +560,12 @@ function M.subscribe(callback, opts)
       2
     )
   end
+  if opts.on_drop ~= nil and type(opts.on_drop) ~= "function" then
+    error(
+      ("ui.screenkey.subscribe: on_drop must be a function, got %s"):format(type(opts.on_drop)),
+      2
+    )
+  end
   local max = opts.max_entries
   if max ~= nil and (type(max) ~= "number" or max < 1 or max % 1 ~= 0) then
     error(
@@ -548,6 +581,7 @@ function M.subscribe(callback, opts)
     _max = max,
     _entries = {},
     _live = true,
+    _on_drop = opts.on_drop,
   }, Subscription)
   subscribers[#subscribers + 1] = sub
   if #subscribers == 1 then
@@ -764,7 +798,14 @@ function M.enable()
     end
     render()
     fader.call()
-  end, { scope = "insert_protected" })
+  end, {
+    scope = "insert_protected",
+    -- render() raised and the capture dropped the HUD: be off for real, so is_enabled()
+    -- tells the truth and enable() works again.
+    on_drop = function()
+      M.disable()
+    end,
+  })
   local group = autocmd.group("ui_screenkey_resize", true)
   autocmd.create("VimResized", reposition, {
     group = group,

@@ -37,14 +37,15 @@ sub:unsubscribe()
 | --- | --- | --- |
 | `scope` | `"insert_protected"` | which keys the subscription gets, see below |
 | `max_entries` | `setup({ max_entries })` (30), read live | how many entries `sub:entries()` keeps; the oldest go first |
+| `on_drop` | none | `function(err)`, called when the subscription is removed because its callback raised |
 
 The scopes:
 
 | Scope | Gets |
 | --- | --- |
-| `"normal"` | the keys typed outside Insert, Replace and Terminal mode: Normal, Visual, Operator-pending and the command line (`:w<CR>`). The key that enters Insert mode (`i`) is in, the text typed there and the `<Esc>` that leaves it are not. Never a protected key |
-| `"insert_protected"` | every mode, but never a protected key. What the HUD itself shows |
-| `"all"` | every key, protected ones too. For a display only the person at the keyboard sees |
+| `"normal"` | only commands: the keys typed in Normal, Visual and Operator-pending mode. Nothing typed as text: not in Insert or Replace mode, not on the command line (`:let $TOKEN=...`, `:!curl -u user:pw`, a `/` search for a secret -- the `:` or `/` that opens it is shown, the text and its `<CR>` are not; the right-hand side of a mapping that runs a command is typed there too), not in Select mode (what overwrites a snippet placeholder) and not in Terminal mode. The key that enters Insert mode (`i`) is in, the text typed there and the `<Esc>` that leaves it are not. Never a protected key |
+| `"insert_protected"` | every mode but Terminal mode (a `sudo`, `ssh` or `gpg` password cannot be told from other text there), and never a protected key. What the HUD itself shows |
+| `"all"` | every key, protected ones and Terminal mode too. For a display only the person at the keyboard sees |
 
 A **protected** key is one typed into a secret `ui.kit` prompt or sheet (`ui.kit.surface.is_secret`),
 while `vim.fn.input()` or `vim.fn.inputsecret()` waits (command-line type `@` / `-`), into a
@@ -69,6 +70,10 @@ per keystroke. `vim.on_key()` is attached while there is at least one subscripti
 own included) and detached with the last one: nobody listening costs nothing per key.
 `require("ui.screenkey").subscriber_count()` says how many there are.
 
-Not covered (as for the HUD): keys read with `getchar()`/`getcharstr()`, and text typed into a
-`:terminal` buffer in the `insert_protected` scope (add `hide = { buftypes = { "terminal" } }`;
-`normal` leaves Terminal mode out anyway).
+**Known limit, every scope:** a password a plugin reads key by key with `getchar()` /
+`getcharstr()` (a loop that never opens a prompt) cannot be told from any other key: the mode
+is Normal and no prompt is open, so it is captured like a command. Nothing in Neovim marks such
+a read as secret. Keep a keystroke display off while typing a password into such a plugin.
+
+`opts.on_drop(err)` (optional) is called when the subscription is removed because its callback
+raised, so the consumer can reset what it built on it (the HUD switches itself off).

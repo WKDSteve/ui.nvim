@@ -7,6 +7,12 @@ Behavior changes of ui.nvim that a user or a host config can notice. The format 
 
 ### Added
 
+- `ui.screenkey.subscribe`: `on_drop(err)` tells a subscriber that it was removed because its callback raised.
+
+### Changed (privacy)
+
+- `ui.screenkey`: the HUD (scope `insert_protected`) no longer shows keys typed in Terminal mode, where a `sudo`/`ssh`/`gpg` password cannot be told from other text. Scope `normal` leaves out the command line (`:let $TOKEN=...`, a search; only the `:`/`/` that opens it is shown) and Select mode as well. A HUD whose drawing failed switches itself off, so `:UI screenkey` works again.
+
 - `ui.screenkey.subscribe(callback, { scope, max_entries })`: the key capture of the screenkey HUD as a public API for another display (the keycast overlay of mdview.nvim), with the scopes `normal` (no Insert, Replace or Terminal mode), `insert_protected` (what the HUD shows) and `all`; the HUD is one subscriber, `vim.on_key()` hangs only while somebody listens. See `docs/screenkey.md`.
 
 ### Changed
