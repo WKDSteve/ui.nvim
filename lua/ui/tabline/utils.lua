@@ -536,6 +536,26 @@ local function close_width(shape, rendered)
   return w
 end
 
+---@internal
+---The longest head of `s` that fits in `cells` display cells, cut between
+---characters, never inside one.
+---@param s string
+---@param cells integer
+---@return string
+local function fit_cells(s, cells)
+  local out, used = {}, 0
+  for i = 0, vim.fn.strchars(s) - 1 do
+    local ch = vim.fn.strcharpart(s, i, 1)
+    local w = vim.fn.strdisplaywidth(ch)
+    if used + w > cells then
+      break
+    end
+    out[#out + 1] = ch
+    used = used + w
+  end
+  return table.concat(out)
+end
+
 --- Render one buffer chip: devicon, (deduplicated, truncated) name, and a
 --- modified-dot or close button depending on focus/modified state. Ported
 --- from `nvchad.tabufline.utils.style_buf`.
@@ -629,22 +649,24 @@ function M.style_buf(bufnr, index, width, is_pinned)
   -- `M.buffers()` never sends one in practice, its own `bufwidth` floor
   -- (`MIN_BUFWIDTH` / `cfg.bufwidth_min`, 12 by default) sits well above
   -- `fixed`.
+  -- Measured and cut in display cells, not bytes: `Übersicht.md` is 13 bytes
+  -- but 12 cells, and a byte cut can split a UTF-8 sequence (shown as `<c3>`).
   local max_name_len = math.max(0, width - fixed)
-  if #name > max_name_len then
+  if vim.fn.strdisplaywidth(name) > max_name_len then
     if max_name_len <= 2 then
       -- Not even room for one head character plus "..": the ellipsis
       -- itself would blow the budget this narrow, so it is dropped rather
       -- than added on top of a truncated name that no longer fits either.
-      name = name:sub(1, max_name_len)
+      name = fit_cells(name, max_name_len)
     else
-      name = name:sub(1, max_name_len - 2) .. ".."
+      name = fit_cells(name, max_name_len - 2) .. ".."
     end
   end
 
   -- Escaped after the width/truncation math above, which has to measure the
   -- name as it will actually display -- `%%` is two characters wide in the
   -- string but renders as one literal `%`.
-  local extra = math.max(0, width - fixed - #name)
+  local extra = math.max(0, width - fixed - vim.fn.strdisplaywidth(name))
   local side_pad = min_side_pad + math.floor(extra / 2)
 
   local body = string.rep(" ", side_pad)

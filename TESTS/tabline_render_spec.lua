@@ -364,6 +364,25 @@ describe("ui.tabline.utils.style_buf", function()
     assert.is_nil(chip:find("50%done", 1, true))
   end)
 
+  it("cuts a non-ASCII name between characters and pads it by display width", function()
+    local buf = vim.api.nvim_create_buf(true, false)
+    vim.api.nvim_buf_set_name(buf, "Übersichtsplanung-für-das-Jahr.md")
+    local saved = vim.t.bufs
+    vim.t.bufs = { buf }
+
+    local chip = utils.style_buf(buf, 1, 16)
+    local wide = utils.style_buf(buf, 1, 60)
+
+    vim.t.bufs = saved
+    pcall(vim.api.nvim_buf_delete, buf, { force = true })
+
+    local shown = vim.api.nvim_eval_statusline(chip, { use_tabline = true })
+    assert.is_nil(shown.str:find("<%x%x>"), shown.str)
+    assert.is_true(vim.str_utfindex(shown.str, "utf-32") > 0)
+    assert.equals(16, shown.width, shown.str)
+    assert.equals(60, vim.api.nvim_eval_statusline(wide, { use_tabline = true }).width)
+  end)
+
   --- Regression for "the icon sits flush against the edge once the chip
   --- narrows" -- pad-1 used to reach 0 at the narrowest allowed width.
   it("always leaves at least one space before the icon, even at MIN_BUFWIDTH", function()
