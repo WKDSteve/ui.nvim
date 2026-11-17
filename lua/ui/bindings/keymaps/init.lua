@@ -183,7 +183,9 @@ function M.setup(opts)
         mode = "n",
         desc = "toggle between the two configured themes",
         rhs = function()
-          local ok2, err2 = pcall(require("ui.bindings.usrcmds.themes").toggle_theme)
+          -- Through the `:UI toggle` handler: a pair whose theme is not
+          -- installed is reported, not swallowed.
+          local ok2, err2 = pcall(require("ui.bindings.usrcmds").toggle_theme)
           if not ok2 then
             notify.warn("[ui.bindings.keymaps] Theme toggle failed: " .. tostring(err2))
           end

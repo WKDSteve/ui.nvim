@@ -858,9 +858,11 @@ local function ui_progress(_args)
   notify.info(table.concat(lines, "\n"))
 end
 
----Toggle between configured themes
----@param _args string[] # Unused: these subcommands take no argument
-local function ui_toggle(_args)
+---Toggle between the configured themes and say what happened. Shared by
+---`:UI toggle`, the `<leader>ut` keymap and the tabline's theme button, so a
+---missing colorscheme reads the same on every path (the keymap and the click
+---used to stay silent).
+function M.toggle_theme()
   local next_theme, failed = theme.toggle_theme()
 
   if next_theme then
@@ -875,6 +877,11 @@ local function ui_toggle(_args)
   else
     notify.warn("No theme_toggle configured.\n" .. "Add at least two themes to theme_toggle.")
   end
+end
+
+---@param _args string[] # Unused: these subcommands take no argument
+local function ui_toggle(_args)
+  M.toggle_theme()
 end
 
 -- The route table is built below the handlers (it points at them), and `help_text`

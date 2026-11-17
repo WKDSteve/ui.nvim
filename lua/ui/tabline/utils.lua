@@ -361,7 +361,7 @@ function M.register_click_handlers()
   ]])
   vim.cmd([[
     function! UiTbToggleTheme(arg, clicks, button, mod)
-      call luaeval('require("ui.bindings.usrcmds.themes").toggle_theme()')
+      call luaeval('require("ui.bindings.usrcmds").toggle_theme()')
     endfunction
   ]])
   vim.cmd([[

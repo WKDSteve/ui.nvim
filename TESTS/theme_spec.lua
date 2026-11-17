@@ -153,4 +153,50 @@ describe("ui.bindings.usrcmds.themes", function()
     assert.is_nil(select(2, themes.toggle_theme()), "fewer than two themes: nothing failed to load")
     config.setup({})
   end)
+
+  -- The keymap and the tabline's theme button called toggle_theme() directly
+  -- and dropped its answer: a missing colorscheme was silent there.
+  it("<leader>ut and the tabline button say the same as :UI toggle", function()
+    local config = require("ui.config")
+    config.setup({ theme = { theme_toggle = { "default", "definitely_not_a_real_colorscheme" } } })
+    require("ui.bindings.keymaps").setup()
+    require("ui.tabline.utils").register_click_handlers()
+
+    ---@param run fun()
+    ---@return string said
+    local function capture(run)
+      local said = {}
+      local orig = vim.notify
+      vim.notify = function(msg)
+        said[#said + 1] = msg
+      end
+      local ok, err = pcall(run)
+      vim.notify = orig
+      assert.is_true(ok, tostring(err))
+      return table.concat(said, "\n")
+    end
+
+    local paths = {
+      keymap = function()
+        vim.fn.maparg("<leader>ut", "n", false, true).callback()
+      end,
+      tabline = function()
+        vim.fn.UiTbToggleTheme(0, 1, "l", "    ")
+      end,
+    }
+    for name, run in pairs(paths) do
+      themes.load_theme("default")
+      local text = capture(run)
+      assert.truthy(
+        text:find("Could not load theme 'definitely_not_a_real_colorscheme'", 1, true),
+        name .. " said: " .. text
+      )
+    end
+
+    config.setup({ theme = { theme_toggle = { "default" } } })
+    local text = capture(paths.keymap)
+    assert.truthy(text:find("No theme_toggle configured", 1, true), "keymap said: " .. text)
+    pcall(vim.keymap.del, "n", "<leader>ut")
+    config.setup({})
+  end)
 end)
