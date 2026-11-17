@@ -38,6 +38,16 @@ local last = {}
 ---@param rendered table<string, string>
 ---@return nil
 function M.record(winid, order, rendered)
+  -- A window seen for the first time: drop the entries of closed ones, so
+  -- the table does not grow with every window id a long session ever had.
+  -- Only then, not on every redraw of a known window.
+  if last[winid] == nil then
+    for id in pairs(last) do
+      if id ~= 0 and not vim.api.nvim_win_is_valid(id) then
+        last[id] = nil
+      end
+    end
+  end
   last[winid] = { order = order, rendered = rendered }
 end
 

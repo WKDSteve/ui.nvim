@@ -352,6 +352,23 @@ describe("ui.statusline.render against every shipped variant", function()
   end
 end)
 
+describe("ui.statusline.layout", function()
+  it("forgets the layout of a closed window once another window records one", function()
+    local layout = require("ui.statusline.layout")
+    vim.cmd("new")
+    local gone = vim.api.nvim_get_current_win()
+    layout.record(gone, { "a" }, { a = "A" })
+    assert.is_table(layout.current(gone))
+    vim.api.nvim_win_close(gone, true)
+    vim.cmd("new")
+    local fresh = vim.api.nvim_get_current_win()
+    layout.record(fresh, { "b" }, { b = "B" })
+    assert.is_nil(layout.current(gone))
+    assert.is_table(layout.current(fresh))
+    vim.api.nvim_win_close(fresh, true)
+  end)
+end)
+
 describe("ui.statusline.themes.default", function()
   local default_theme = require("ui.statusline.themes.default")
 
