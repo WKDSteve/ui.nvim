@@ -1088,6 +1088,33 @@ local function scratch_buf(f)
 end
 
 ---@internal
+---`s` with every tab replaced by the spaces up to the next multiple of `ts`,
+---counted in display cells from the start of `s` (where the source window's
+---text area starts too).
+---@param s string
+---@param ts integer
+---@return string
+local function expand_tabs(s, ts)
+  if not s:find("\t", 1, true) then
+    return s
+  end
+  ts = (type(ts) == "number" and ts > 0) and ts or 8
+  local out, col = {}, 0
+  for i = 0, vim.fn.strchars(s) - 1 do
+    local ch = vim.fn.strcharpart(s, i, 1)
+    if ch == "\t" then
+      local n = ts - (col % ts)
+      out[#out + 1] = string.rep(" ", n)
+      col = col + n
+    else
+      out[#out + 1] = ch
+      col = col + vim.fn.strwidth(ch)
+    end
+  end
+  return table.concat(out)
+end
+
+---@internal
 ---Open `win`'s overlay float at `wconfig`, or move an existing one there.
 ---@param f { win: integer }|nil
 ---@param cbuf integer
@@ -1137,6 +1164,10 @@ local function draw_mimic(win, buf, entries)
   -- invalidate the cache -- broader than strictly necessary, but draw()
   -- is cheap and refresh() upstream is already debounced. Height is in the
   -- key too: a `"bottom"` anchor's row depends on it, not just on width.
+  -- So are the gutter width and `'number'`: `:set number`/`signcolumn`, or
+  -- the number column growing at line 10000, change every row drawn.
+  local info = vim.fn.getwininfo(win)[1]
+  local textoff = info and info.textoff or 0
   local key = buf
     .. "@"
     .. vim.api.nvim_buf_get_changedtick(buf)
@@ -1151,13 +1182,13 @@ local function draw_mimic(win, buf, entries)
     .. vim.api.nvim_win_get_width(win)
     .. "x"
     .. vim.api.nvim_win_get_height(win)
+    .. "|"
+    .. textoff
+    .. (vim.wo[win].number and "n" or "")
   local f = floats[win]
   if f and f.key == key and vim.api.nvim_win_is_valid(f.win) then
     return
   end
-
-  local info = vim.fn.getwininfo(win)[1]
-  local textoff = info and info.textoff or 0
 
   -- Built at natural length first (not yet clipped to any window/box
   -- width): a compact anchor needs to know how wide the content actually
@@ -1169,6 +1200,10 @@ local function draw_mimic(win, buf, entries)
     -- from every byte inside it, and this is someone else's source line.
     text = strings.rtrim(text)
     levels[i], indents[i] = heading_level(buf, text)
+    -- The overlay buffer has its own 'tabstop' (8): a tab kept as it is would
+    -- shift the pinned line against the source below it, and `strwidth`
+    -- counts it as one cell. Spaces at the source's tab stops instead.
+    text = expand_tabs(text, vim.bo[buf].tabstop)
     local g = gutter(win, e.row, textoff)
     gutters[i] = #g
     raw[i] = g .. text

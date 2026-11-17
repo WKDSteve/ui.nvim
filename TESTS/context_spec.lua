@@ -154,6 +154,38 @@ describe("ui.context", function()
     assert.is_false(wcfg.focusable)
   end)
 
+  it("draws a tab-indented context line at the source's tabstop", function()
+    if not has_lua_parser then
+      pending("no Lua parser available")
+      return
+    end
+    local win, buf = open_source()
+    vim.api.nvim_buf_set_lines(buf, 3, 4, false, { "\tif a > b then" })
+    vim.bo[buf].tabstop = 4
+    context.enable()
+    scroll_to(win, 7)
+    context.refresh(win)
+    local lines = overlay_lines(win)
+    assert.truthy(lines[2]:find(" 4     if a > b then", 1, true), lines[2])
+    assert.is_nil(lines[2]:find("\t", 1, true))
+  end)
+
+  it("redraws the gutter when 'number' changes with the same context", function()
+    if not has_lua_parser then
+      pending("no Lua parser available")
+      return
+    end
+    local win = open_source()
+    context.enable()
+    scroll_to(win, 7)
+    context.refresh(win)
+    assert.truthy(overlay_lines(win)[1]:find("^%s*3 "))
+    vim.wo[win].number = false
+    context.refresh(win)
+    local first = overlay_lines(win)[1]
+    assert.truthy(first:find("^local function outer"), "no stale gutter: " .. first)
+  end)
+
   for _, style in ipairs({ "mimic", "chips" }) do
     it("draws a scope line with a long whitespace run in linear time (" .. style .. ")", function()
       if not has_lua_parser then
