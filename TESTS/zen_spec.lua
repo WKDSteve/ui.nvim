@@ -92,6 +92,34 @@ describe("ui.zen", function()
     assert.equals(winB, zen.win())
   end)
 
+  it("puts the frame back and leaves no backdrop when the zen window cannot open", function()
+    open_buffer()
+    vim.o.laststatus = 2
+    vim.o.showtabline = 2
+    local wins_before = #vim.api.nvim_list_wins()
+    local real_open, real_notify = vim.api.nvim_open_win, vim.notify
+    local calls, warned = 0, nil
+    vim.api.nvim_open_win = function(...)
+      calls = calls + 1
+      if calls == 2 then
+        error("E11: Invalid in command-line window")
+      end
+      return real_open(...)
+    end
+    vim.notify = function(msg)
+      warned = msg
+    end
+    local ok, win = pcall(zen.open)
+    vim.api.nvim_open_win, vim.notify = real_open, real_notify
+    assert.is_true(ok, tostring(win))
+    assert.is_nil(win)
+    assert.is_false(zen.is_open())
+    assert.equals(2, vim.o.laststatus)
+    assert.equals(2, vim.o.showtabline)
+    assert.equals(wins_before, #vim.api.nvim_list_wins(), "the backdrop is closed again")
+    assert.is_truthy(warned and warned:find("E11", 1, true))
+  end)
+
   it("toggles, and setup() changes the width live", function()
     open_buffer()
     assert.is_true(zen.toggle())

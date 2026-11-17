@@ -223,9 +223,24 @@ function M.open()
     save("showcmd", false)
   end
 
+  ---Undo what this call changed so far, when a window could not be opened (the
+  ---command-line window refuses one, E11; so does a terminal too small).
+  ---@param err any
+  ---@param backdrop_win integer|nil
+  ---@return nil
+  local function abort(err, backdrop_win)
+    if backdrop_win and api.nvim_win_is_valid(backdrop_win) then
+      pcall(api.nvim_win_close, backdrop_win, true)
+    end
+    for name, value in pairs(saved) do
+      vim.o[name] = value
+    end
+    vim.notify("ui.zen: could not open the zen window: " .. tostring(err), vim.log.levels.WARN)
+  end
+
   local backdrop_buf = api.nvim_create_buf(false, true)
   vim.bo[backdrop_buf].bufhidden = "wipe"
-  local backdrop = api.nvim_open_win(backdrop_buf, false, {
+  local ok_backdrop, backdrop = pcall(api.nvim_open_win, backdrop_buf, false, {
     relative = "editor",
     width = vim.o.columns,
     height = vim.o.lines,
@@ -236,10 +251,15 @@ function M.open()
     zindex = 40,
     noautocmd = true,
   })
+  if not ok_backdrop then
+    pcall(api.nvim_buf_delete, backdrop_buf, { force = true })
+    abort(backdrop)
+    return nil
+  end
   vim.wo[backdrop].winhighlight = "Normal:" .. backdrop_group() .. ",NormalNC:" .. backdrop_group()
   vim.wo[backdrop].winblend = 0
 
-  local win = api.nvim_open_win(buf, true, {
+  local ok_win, win = pcall(api.nvim_open_win, buf, true, {
     relative = "editor",
     width = g.width,
     height = g.height,
@@ -249,6 +269,10 @@ function M.open()
     border = "none",
     zindex = 45,
   })
+  if not ok_win then
+    abort(win, backdrop)
+    return nil
+  end
   for name, value in pairs(cfg.wo or {}) do
     pcall(function()
       vim.wo[win][name] = value
