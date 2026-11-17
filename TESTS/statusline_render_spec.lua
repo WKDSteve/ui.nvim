@@ -103,6 +103,28 @@ describe("ui.statusline.render.generate", function()
     end)
   end)
 
+  it("renders a module that returns a number as its text and a table as empty", function()
+    local out
+    assert.has_no.errors(function()
+      out = render.generate({
+        order = { "n", "t", "b", "s" },
+        modules = {
+          n = function()
+            return 42
+          end,
+          t = function()
+            return { "x" }
+          end,
+          b = function()
+            return true
+          end,
+          s = "S",
+        },
+      })
+    end)
+    assert.equals("42S", strip_click(out))
+  end)
+
   it("uses an empty order/modules table when omitted, without throwing", function()
     assert.has_no.errors(function()
       assert.equals("", render.generate({}))

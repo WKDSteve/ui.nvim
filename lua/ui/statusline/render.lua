@@ -402,6 +402,22 @@ function M.generate(cfg)
         )
       end
 
+      -- A module's contract is a string. A number is taken as its text; anything
+      -- else (a table, `true`) would raise below, outside the pcall, and take
+      -- the whole statusline down instead of just this segment.
+      if type(rendered) == "number" then
+        rendered = tostring(rendered)
+      elseif rendered ~= nil and type(rendered) ~= "string" then
+        warn_once(
+          "type:" .. key,
+          ("ui.statusline.render: module %q returned a %s, not a string -- rendering it empty"):format(
+            key,
+            type(rendered)
+          )
+        )
+        rendered = nil
+      end
+
       if rendered and rendered ~= "" then
         if key == hovered_key then
           rendered = recolor_for_hover(rendered)
