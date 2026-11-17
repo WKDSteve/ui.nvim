@@ -156,10 +156,11 @@ end
 --- chip of its own, so "jjjjjjjj" does not paint a wall of j.
 ---@param display string
 ---@param count integer
+---@param join boolean # whether runs are joined at all (`cfg.join_chars`, or the caller's choice)
 ---@return boolean
 local JOIN_REPEAT_MAX = 3
-local function joinable(display, count)
-  return cfg.join_chars and count <= JOIN_REPEAT_MAX and display:match("^<.+>$") == nil
+local function joinable(display, count, join)
+  return join and count <= JOIN_REPEAT_MAX and display:match("^<.+>$") == nil
 end
 
 ---@internal
@@ -202,13 +203,17 @@ end
 --- recent keystroke is always the one worth seeing.
 ---@param entries { key: string, count: integer }[]
 ---@param width integer
+---@param join? boolean # join plain characters into runs; default `cfg.join_chars`
 ---@return string
-local function build_text(entries, width)
+local function build_text(entries, width, join)
+  if join == nil then
+    join = cfg.join_chars
+  end
   local parts = {}
   local open = false -- whether parts[#parts] is a run that may still grow
   for _, e in ipairs(entries) do
     local display = label_of(e.key)
-    if joinable(display, e.count) then
+    if joinable(display, e.count, join) then
       local run = display:rep(e.count)
       if open then
         parts[#parts] = parts[#parts] .. run
@@ -373,10 +378,17 @@ end
 
 ---The entries as one line of at most `width` display columns, formatted as the HUD formats
 ---them (labels, `key×N` repeats, `join_chars` runs), the oldest dropped first.
+---`opts.join_chars` overrides the `join_chars` of `setup()` for this line (a display that
+---always wants typed text to read as text, `:let` rather than `: l e t`).
 ---@param width integer
+---@param opts? { join_chars?: boolean }
 ---@return string
-function Subscription:text(width)
-  return build_text(self._entries, width)
+function Subscription:text(width, opts)
+  local join = nil
+  if type(opts) == "table" and type(opts.join_chars) == "boolean" then
+    join = opts.join_chars
+  end
+  return build_text(self._entries, width, join)
 end
 
 ---Whether this subscription still receives keys.

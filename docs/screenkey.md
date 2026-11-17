@@ -58,7 +58,7 @@ The handle:
 | Method | Does |
 | --- | --- |
 | `sub:entries()` | a copy of the recorded entries, oldest first |
-| `sub:text(width)` | the entries as one line of at most `width` display columns: labels, `key×N` for repeats, `join_chars` runs; the oldest are dropped first |
+| `sub:text(width, opts?)` | the entries as one line of at most `width` display columns: labels, `key×N` for repeats, `join_chars` runs; the oldest are dropped first. `opts.join_chars` overrides the `setup()` value for this line (`:w` rather than `: w`) |
 | `sub:clear()` | forget the recorded entries (a fade-out does this) |
 | `sub:unsubscribe()` | stop; idempotent |
 | `sub:active()` | whether it still receives keys |
