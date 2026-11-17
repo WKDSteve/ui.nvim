@@ -114,7 +114,7 @@ end
 ---@field base string          # the colour the shades row is built from
 ---@field rows table<integer, Ui.Colorpicker.Cell[]>  # 0-based buffer row -> cells
 ---@field surf Ui.Kit.Surface|nil
----@field origin { buf: integer, win: integer, row: integer, col: integer, s: integer|nil, e: integer|nil }
+---@field origin { buf: integer, win: integer, row: integer, col: integer, s: integer|nil, e: integer|nil, literal: string|nil }
 ---@field on_pick fun(hex: string)|nil
 ---@field parked? integer[]    # (1,0)-based cursor `open` put on the start colour's cell, until the cursor leaves it
 
@@ -315,7 +315,21 @@ local function default_pick(state, hex)
     return
   end
   if o.s and o.e then
-    api.nvim_buf_set_text(o.buf, o.row, o.s, o.row, o.e, { hex })
+    -- The buffer may have changed while the picker was open (a formatter,
+    -- `:e!`, another window): only replace the literal if it is still where
+    -- it was, never whatever bytes now sit at those columns.
+    local now = api.nvim_buf_get_lines(o.buf, o.row, o.row + 1, false)[1]
+    if not now or now:sub(o.s + 1, o.e) ~= o.literal then
+      vim.notify(
+        ("ui.colorpicker: the colour under the cursor changed meanwhile -- %s is in register %s"):format(
+          hex,
+          cfg.yank_register
+        ),
+        vim.log.levels.WARN
+      )
+      return
+    end
+    pcall(api.nvim_buf_set_text, o.buf, o.row, o.s, o.row, o.e, { hex })
   else
     -- After the cursor character, like `p`: a normal-mode cursor sits ON the
     -- last character, and "bg = |" wants the colour after the space.
@@ -389,6 +403,7 @@ function M.open(opts)
       col = cur[2],
       s = (opts.hex == nil) and s or nil,
       e = (opts.hex == nil) and e or nil,
+      literal = (opts.hex == nil) and s and line:sub(s + 1, e) or nil,
     },
     on_pick = opts.on_pick,
   }

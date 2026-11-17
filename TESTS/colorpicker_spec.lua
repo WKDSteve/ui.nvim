@@ -96,6 +96,30 @@ describe("ui.colorpicker", function()
     assert.equals("color = " .. chosen, vim.api.nvim_buf_get_lines(buf, 0, 1, false)[1])
   end)
 
+  it("does not replace what moved into the literal's place while it was open", function()
+    vim.cmd("new")
+    local buf = vim.api.nvim_get_current_buf()
+    vim.bo[buf].buftype = ""
+    vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "color = #ff0000" })
+    vim.api.nvim_win_set_cursor(0, { 1, 10 })
+    local real_notify, warned = vim.notify, nil
+    vim.notify = function(msg)
+      warned = msg
+    end
+    picker.open()
+    vim.api.nvim_buf_set_lines(buf, 0, 1, false, { "x = 1" })
+    local ok, err = pcall(
+      vim.api.nvim_feedkeys,
+      vim.api.nvim_replace_termcodes("<CR>", true, false, true),
+      "x",
+      false
+    )
+    vim.notify = real_notify
+    assert.is_true(ok, tostring(err))
+    assert.equals("x = 1", vim.api.nvim_buf_get_lines(buf, 0, 1, false)[1])
+    assert.is_truthy(warned and warned:find("changed meanwhile", 1, true))
+  end)
+
   it("inserts at the cursor when nothing is under it, and yanks", function()
     vim.cmd("new")
     local buf = vim.api.nvim_get_current_buf()
