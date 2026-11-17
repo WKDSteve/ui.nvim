@@ -27,6 +27,14 @@ Behavior changes of ui.nvim that a user or a host config can notice. The format 
 
 ### Fixed
 
+- Statusline: a module that returns a number shows it, one that returns a table or `true` renders empty with a warning, instead of blanking the whole statusline on every redraw. A `%` in the file name (`50%off.txt`), in an LSP progress title or in a client name is shown as it is instead of being read as a statusline item.
+- Tabline: a buffer name with non-ASCII characters is cut between characters and the chip keeps its width (it came out a cell too narrow per umlaut, and a cut could show `<c3>`).
+- `:UI zen` where the window cannot open (the command-line window, a tiny terminal) warns and puts statusline, tabline and the backdrop back instead of leaving them hidden.
+- Sticky context: a tab-indented line is pinned at the source's `tabstop`, and `:set number`/`signcolumn` redraws the gutter at once.
+- `:UI color`: `<CR>` no longer writes into a line that changed while the picker was open; it warns, and the pick stays in the yank register.
+- `:UI notify history` keeps working after a plugin passed a non-string `title`.
+- A slot's file preview cuts a very long line between characters, not inside a multi-byte one.
+
 - `:UI toggle`: when the theme the `theme_toggle` pair would switch to is not installed, the warning names it ("Could not load theme '...' of theme_toggle") instead of claiming that no pair is configured.
 - `<leader>ut` and the theme button of the tabline say the same as `:UI toggle` (the theme switched to, the theme that could not be loaded, or that no pair is configured) instead of staying silent.
 - `:UI color #rrggbb` (`ui.colorpicker`): in an editor with a UI the pick became the nearest grid colour as soon as the picker was drawn (`#3366cc` -> `#3466cb`), so `<CR>` without a move did not give the start colour back; it stays exact until the cursor leaves its cell.
