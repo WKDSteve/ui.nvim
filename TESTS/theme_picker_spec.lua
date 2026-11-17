@@ -32,13 +32,22 @@ local function move_to(winid, n)
   vim.api.nvim_exec_autocmds("CursorMoved", { buffer = vim.api.nvim_win_get_buf(winid) })
 end
 
+--- Upper bound for every wait below, not a delay: each wait returns as soon
+--- as the colorscheme it waits for is applied. It has to cover the preview
+--- debounce (80 ms) plus a full `:colorscheme` run, and the second depends
+--- on the machine: locally the packpath can hold heavy Lua themes (the list
+--- is alphabetical, so `catppuccin` ends up as the target next to `blue`),
+--- each ~150 ms on an idle machine and several times that while a full run
+--- loads the CPU. The old 200/300 ms caps made the spec red locally and
+--- green on the hosted runners (built-in themes only).
+local WAIT_MS = 5000
+
 ---@internal
---- Block until the debounced preview has actually applied `name`, or the
---- wait times out (leaving the caller's own assertion to report the
---- mismatch instead of failing on a timing race).
+--- Block until the colorscheme is `name`, or `WAIT_MS` passes (leaving the
+--- caller's own assertion to report the mismatch).
 ---@param name string
 local function wait_for_theme(name)
-  vim.wait(300, function()
+  vim.wait(WAIT_MS, function()
     return vim.g.colors_name == name
   end, 10)
 end
@@ -100,9 +109,7 @@ describe("ui.bindings.usrcmds.themes.picker", function()
     -- (`vim.schedule`, see its own comment) to let a real selection flip its
     -- `chose` flag first -- flush that tick before asserting.
     vim.api.nvim_win_close(winid, true)
-    vim.wait(200, function()
-      return vim.g.colors_name == original
-    end, 10)
+    wait_for_theme(original)
     assert.equals(original, vim.g.colors_name)
   end)
 
@@ -150,9 +157,7 @@ describe("ui.bindings.usrcmds.themes.picker", function()
     assert.equals(target, vim.g.colors_name)
 
     vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<Esc>", true, false, true), "x", false)
-    vim.wait(200, function()
-      return vim.g.colors_name == original
-    end, 10)
+    wait_for_theme(original)
     assert.equals(original, vim.g.colors_name)
   end)
 
