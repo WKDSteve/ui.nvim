@@ -167,7 +167,7 @@ function M.close_buffer(bufnr)
   vim.defer_fn(function()
     -- pcall'd like every other call site in this ecosystem (see
     -- docs/BINDINGS.md's "a failure notifies and returns rather than
-    -- raising"): this runs 120ms after the synchronous half already
+    -- raising"): this runs CLOSE_DELAY_MS after the synchronous half already
     -- returned, so a bufnr that went invalid in the meantime (closed
     -- elsewhere, double-clicked) must not surface as an unhandled error out
     -- of a timer callback.
@@ -218,7 +218,7 @@ function M.close_all_bufs(include_cur_buf)
 
   vim.defer_fn(function()
     -- Same pcall guard as M.close_buffer above, same reason: this fires
-    -- 120ms after the caller's own pcall (the close_all keymap's `rhs`) has
+    -- CLOSE_DELAY_MS after the caller's own pcall (the close_all keymap's `rhs`) has
     -- already returned, so it is the only thing left standing between a
     -- failure here and an unhandled error out of a timer callback.
     local ok, err =
