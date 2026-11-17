@@ -288,7 +288,9 @@ function M.handler(msg, level, opts)
     time = os.time(),
     level = norm_level(level),
     msg = type(msg) == "string" and msg or vim.inspect(msg),
-    title = type(opts) == "table" and opts.title or nil,
+    -- Only a string: the history view concatenates it, and one `title = true`
+    -- from some plugin would break `:UI notify history` until it is cleared.
+    title = type(opts) == "table" and type(opts.title) == "string" and opts.title or nil,
   }
   record(entry)
   if entry.level >= (cfg.min_level or vim.log.levels.INFO) then

@@ -53,6 +53,18 @@ describe("ui.notify", function()
     assert.truthy(h[1].msg:find("a = 1"))
   end)
 
+  it("drops a title that is not a string, so the history still renders", function()
+    notify.enable()
+    notify.handler("a", vim.log.levels.DEBUG, { title = true })
+    notify.handler("b", vim.log.levels.DEBUG, { title = { "x" } })
+    notify.handler("c", vim.log.levels.DEBUG, { title = "Plug" })
+    local lines
+    assert.has_no.errors(function()
+      lines = notify.history_lines()
+    end)
+    assert.truthy(table.concat(lines, "\n"):find("Plug: c", 1, true))
+  end)
+
   it("trims the history to history_size", function()
     notify.setup({ history_size = 3, min_level = vim.log.levels.ERROR })
     notify.enable()
