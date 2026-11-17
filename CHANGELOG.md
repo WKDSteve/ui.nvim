@@ -5,6 +5,10 @@ Behavior changes of ui.nvim that a user or a host config can notice. The format 
 
 ## [Unreleased]
 
+### Added
+
+- `ui.screenkey.subscribe(callback, { scope, max_entries })`: the key capture of the screenkey HUD as a public API for another display (the keycast overlay of mdview.nvim), with the scopes `normal` (no Insert, Replace or Terminal mode), `insert_protected` (what the HUD shows) and `all`; the HUD is one subscriber, `vim.on_key()` hangs only while somebody listens. See `docs/screenkey.md`.
+
 ### Changed
 
 - `kit.confirm` / `kit.ask` (from lib.nvim): without `default` the safe button starts focused (`No` of the Yes/No pair, else the first no/cancel-style label, else the first button) instead of always the first one, so a stray `<CR>` never confirms a destructive action where the dialog offers a way out.

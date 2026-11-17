@@ -10,6 +10,7 @@ What is where, and which question each page answers.
 | [modules.md](modules.md) | Every statusline segment this plugin ships, one line each, with a copy-pasteable wiring snippet |
 | [BINDINGS.md](BINDINGS.md) | Every command, keymap and autocommand — including the ones that deliberately do not exist |
 | [../lua/ui/slots/README.md](../lua/ui/slots/README.md) | The numbered action slots: kinds, placeholders, bar, panel, previews, options |
+| [screenkey.md](screenkey.md) | The keystroke HUD's key capture as an API for another display (`ui.screenkey.subscribe`), its scopes and what is protected |
 | [health.md](health.md) | Every line `:checkhealth ui` can print, and what to do about it |
 | [nvchad-migration.md](nvchad-migration.md) | Credits, and the step-by-step decision record of how the NvChad coupling was replaced |
 

@@ -12,10 +12,12 @@
 --- float itself is `ui.kit.surface` -- the same primitive `ui.kit.toast`
 --- reflows into a corner, no new float-window mechanics invented here.
 ---
---- The `vim.on_key()` hook is registered only while enabled (mirrors
---- `ui.statusline.modules.macro_counter`'s own `RecordingEnter`/
---- `RecordingLeave`-bracketed hook) -- a disabled screenkey costs nothing on
---- every keystroke in the session, not just "renders nothing".
+--- The capture is public (`M.subscribe`, docs/screenkey.md): the HUD is one
+--- subscriber, another display (mdview.nvim's keycast overlay) can be another.
+--- The `vim.on_key()` hook is registered only while there is a subscriber
+--- (mirrors `ui.statusline.modules.macro_counter`'s own `RecordingEnter`/
+--- `RecordingLeave`-bracketed hook) -- a disabled screenkey with nobody else
+--- listening costs nothing on every keystroke, not just "renders nothing".
 ---
 --- Privacy: a recording is when a password typed into a prompt costs the most, so the
 --- keys typed into a buffer marked as holding a secret (`ui.kit.surface.is_secret`: a
@@ -31,8 +33,6 @@ local debounce = require("lib.nvim.debounce")
 local normalize = require("lib.nvim.normalize")
 local autocmd = require("lib.nvim.bindings.autocmd")
 local notify = require("lib.nvim.notify").create("[ui.screenkey]")
-
-local NS = vim.api.nvim_create_namespace("ui_screenkey")
 
 local M = {}
 
@@ -90,8 +90,9 @@ local KNOWN_OPTS = {
 local enabled = false
 ---@type Ui.Kit.Surface|nil
 local surf = nil
----@type { key: string, count: integer }[]
-local entries = {}
+---@type Ui.Screenkey.Subscription|nil
+--- The HUD's own subscription (see `M.subscribe`): it holds the entries the HUD shows.
+local hud = nil
 ---@type string[]
 --- Rejected values from the last `M.setup()` call -- an invalid single value
 --- keeps `cfg`'s current one instead of corrupting it, surfaced through
@@ -107,7 +108,9 @@ local function clear()
     surf:close()
     surf = nil
   end
-  entries = {}
+  if hud then
+    hud:clear()
+  end
 end
 
 ---@internal
@@ -195,10 +198,12 @@ end
 
 ---@internal
 --- Build the one-line display string from `entries`, dropping the oldest
---- entries (never the newest) until it fits `cfg.width` -- the most recent
---- keystroke is always the one worth seeing.
+--- entries (never the newest) until it fits `width` display columns -- the most
+--- recent keystroke is always the one worth seeing.
+---@param entries { key: string, count: integer }[]
+---@param width integer
 ---@return string
-local function build_text()
+local function build_text(entries, width)
   local parts = {}
   local open = false -- whether parts[#parts] is a run that may still grow
   for _, e in ipairs(entries) do
@@ -217,7 +222,7 @@ local function build_text()
     end
   end
 
-  local max_w = math.max(1, cfg.width - 2) -- inside the border/padding
+  local max_w = math.max(1, width)
   local text = table.concat(parts, " ")
   while #parts > 1 and vim.fn.strdisplaywidth(text) > max_w do
     table.remove(parts, 1)
@@ -268,7 +273,7 @@ end
 --- leaving it pinned to stale coordinates (PERF-92).
 ---@return nil
 local function render()
-  local text = build_text()
+  local text = build_text(hud and hud._entries or {}, cfg.width - 2) -- inside the border/padding
 
   if surf and surf:is_valid() then
     reposition()
@@ -333,16 +338,89 @@ local function protected()
     or hidden_filetype(bo.filetype)
 end
 
+---@alias Ui.Screenkey.Scope
+---| "normal" # keys typed outside Insert, Replace and Terminal mode (Normal, Visual, Operator-pending, the command line)
+---| "insert_protected" # every mode, but never a protected key (what the HUD shows)
+---| "all" # every key, protected ones too
+
+--- One captured key as a subscriber sees it.
+---@class Ui.Screenkey.Entry
+---@field key string # the keytrans() name, e.g. `<C-W>`, `<Esc>`, `w`
+---@field label string # what to show: the `labels` replacement of `key`, else `key`
+---@field count integer # how many times in a row it was pressed (1 for a new key)
+
+--- A handle `M.subscribe()` returns.
+---@class Ui.Screenkey.Subscription
+---@field scope Ui.Screenkey.Scope
+---@field package _cb fun(entry: Ui.Screenkey.Entry, sub: Ui.Screenkey.Subscription)
+---@field package _max integer|nil
+---@field package _entries Ui.Screenkey.Entry[]
+---@field package _live boolean
+local Subscription = {}
+Subscription.__index = Subscription
+
+---The entries since the last `clear()`, oldest first (at most `max_entries`). A copy.
+---@return Ui.Screenkey.Entry[]
+function Subscription:entries()
+  return vim.deepcopy(self._entries)
+end
+
+---Drop the recorded entries (the next key starts a new list).
+---@return nil
+function Subscription:clear()
+  self._entries = {}
+end
+
+---The entries as one line of at most `width` display columns, formatted as the HUD formats
+---them (labels, `key×N` repeats, `join_chars` runs), the oldest dropped first.
+---@param width integer
+---@return string
+function Subscription:text(width)
+  return build_text(self._entries, width)
+end
+
+---Whether this subscription still receives keys.
+---@return boolean
+function Subscription:active()
+  return self._live
+end
+
+--- The scopes `M.subscribe()` accepts.
+M.SCOPES = { "normal", "insert_protected", "all" }
+
+local CAPTURE_NS = vim.api.nvim_create_namespace("ui_screenkey_capture")
+---@type Ui.Screenkey.Subscription[]
+local subscribers = {}
+
 ---@internal
---- The `vim.on_key()` callback. Deliberately minimal outside `vim.schedule`
---- -- the raw callback runs in Neovim's own input-processing path, not a
---- normal call stack, so the actual state mutation and every API call
---- (`nvim_open_win` et al., via `render()`) are deferred onto the main loop
---- the same way `lib.nvim.debounce`'s own fired callback already is.
+--- Record `trans` in a subscription's list and return the entry it added or counted up.
+---@param sub Ui.Screenkey.Subscription
+---@param trans string
+---@return Ui.Screenkey.Entry
+local function push(sub, trans)
+  local list = sub._entries
+  local last = list[#list]
+  if last and last.key == trans then
+    last.count = last.count + 1
+    return last
+  end
+  local entry = { key = trans, label = label_of(trans), count = 1 }
+  list[#list + 1] = entry
+  while #list > (sub._max or cfg.max_entries) do
+    table.remove(list, 1)
+  end
+  return entry
+end
+
+---@internal
+--- The `vim.on_key()` callback of the capture, registered while there is at least one
+--- subscriber. Deliberately minimal outside `vim.schedule` -- the raw callback runs in
+--- Neovim's own input-processing path, not a normal call stack, so the state mutation and
+--- every subscriber call are deferred onto the main loop.
 ---
---- A key typed while `protected()` is not shown. That is asked HERE, before the `vim.schedule`: the key that submits the prompt
---- (`<CR>`) closes it, and by the time the scheduled work ran the current buffer would
---- be another one and the key would be shown after all.
+--- What a key is (protected, typed in Insert mode) is asked HERE, before the `vim.schedule`:
+--- the key that submits a prompt (`<CR>`) closes it, and by the time the scheduled work ran
+--- the current buffer and mode would be other ones and the key would be shown after all.
 ---@param key string # post-mapping raw keycode, per vim.on_key()'s own contract
 ---@return nil
 local function on_key(key)
@@ -350,15 +428,19 @@ local function on_key(key)
     return
   end
   -- An error here would make Neovim drop this callback for good, and a key whose protection
-  -- could not be told is one that must not be shown: both end the same way, silently.
+  -- could not be told is one that must not be shown: both end the same way, as protected.
   local told, hidden = pcall(protected)
-  if not told or hidden then
-    return
-  end
+  hidden = hidden == true or not told
+  local ok_mode, mode = pcall(function()
+    return vim.api.nvim_get_mode().mode:sub(1, 1)
+  end)
+  local insert_like = not ok_mode or mode == "i" or mode == "R" or mode == "t"
+  local accepts = {
+    all = true,
+    insert_protected = not hidden,
+    normal = not hidden and not insert_like,
+  }
   vim.schedule(function()
-    if not enabled then
-      return
-    end
     local ok, trans = pcall(vim.fn.keytrans, key)
     if not ok or trans == nil or trans == "" then
       return
@@ -368,20 +450,104 @@ local function on_key(key)
     if trans:sub(1, 3) == "<t_" then
       return
     end
-
-    local last = entries[#entries]
-    if last and last.key == trans then
-      last.count = last.count + 1
-    else
-      entries[#entries + 1] = { key = trans, count = 1 }
-      if #entries > cfg.max_entries then
-        table.remove(entries, 1)
+    -- A copy: a callback may unsubscribe (itself or another one) while this runs.
+    for _, sub in ipairs({ unpack(subscribers) }) do
+      if sub._live and accepts[sub.scope] then
+        local entry = push(sub, trans)
+        local fine, err = pcall(sub._cb, vim.deepcopy(entry), sub)
+        if not fine then
+          sub:unsubscribe()
+          pcall(notify.warn, ("a key subscriber failed and was removed: %s"):format(tostring(err)))
+        end
       end
     end
-
-    render()
-    fader.call()
   end)
+end
+
+---Stop receiving keys. The `vim.on_key()` hook is detached with the last subscription.
+---Idempotent.
+---@return nil
+function Subscription:unsubscribe()
+  if not self._live then
+    return
+  end
+  self._live = false
+  for i, sub in ipairs(subscribers) do
+    if sub == self then
+      table.remove(subscribers, i)
+      break
+    end
+  end
+  if #subscribers == 0 then
+    vim.on_key(nil, CAPTURE_NS)
+  end
+end
+
+---Receive the keys pressed in Neovim, formatted as the HUD shows them (`keytrans()` names,
+---`labels`, repeat counts), for another display -- the HUD itself is one subscriber, the
+---keycast overlay of mdview.nvim another. `callback(entry, sub)` runs on the main loop after
+---each accepted key with a copy of the entry it added or counted up; `sub:entries()` and
+---`sub:text(width)` give the whole list. The `vim.on_key()` hook is attached only while
+---there is at least one subscription.
+---
+---`opts.scope` (default `"insert_protected"`) decides which keys a subscription gets:
+---`"normal"` only keys typed outside Insert, Replace and Terminal mode, and never a
+---protected one; `"insert_protected"` every mode but never a protected key; `"all"` every
+---key. A protected key is one typed into a secret `ui.kit` prompt or sheet, while
+---`input()`/`inputsecret()` waits (command-line type `@`/`-`), into a `buftype=prompt`
+---buffer or into a buffer of `setup({ hide = ... })`. `opts.max_entries` caps the list
+---(default: the `max_entries` of `setup()`, read live).
+---
+---A callback that raises is unsubscribed (and a warning shown), so one broken consumer
+---cannot cost a message per keystroke.
+---@param callback fun(entry: Ui.Screenkey.Entry, sub: Ui.Screenkey.Subscription)
+---@param opts? { scope?: Ui.Screenkey.Scope, max_entries?: integer }
+---@return Ui.Screenkey.Subscription
+function M.subscribe(callback, opts)
+  if type(callback) ~= "function" then
+    error(("ui.screenkey.subscribe: callback must be a function, got %s"):format(type(callback)), 2)
+  end
+  if opts ~= nil and type(opts) ~= "table" then
+    error(("ui.screenkey.subscribe: opts must be a table, got %s"):format(type(opts)), 2)
+  end
+  opts = opts or {}
+  local scope = opts.scope or "insert_protected"
+  if not vim.tbl_contains(M.SCOPES, scope) then
+    error(
+      ("ui.screenkey.subscribe: scope must be one of %s, got %s"):format(
+        table.concat(M.SCOPES, ", "),
+        vim.inspect(scope)
+      ),
+      2
+    )
+  end
+  local max = opts.max_entries
+  if max ~= nil and (type(max) ~= "number" or max < 1 or max % 1 ~= 0) then
+    error(
+      ("ui.screenkey.subscribe: max_entries must be a positive integer, got %s"):format(
+        vim.inspect(max)
+      ),
+      2
+    )
+  end
+  local sub = setmetatable({
+    scope = scope,
+    _cb = callback,
+    _max = max,
+    _entries = {},
+    _live = true,
+  }, Subscription)
+  subscribers[#subscribers + 1] = sub
+  if #subscribers == 1 then
+    vim.on_key(on_key, CAPTURE_NS)
+  end
+  return sub
+end
+
+---The number of live subscriptions (the HUD's included) -- for health and tests.
+---@return integer
+function M.subscriber_count()
+  return #subscribers
 end
 
 ---@internal
@@ -580,8 +746,13 @@ function M.enable()
     return
   end
   enabled = true
-  entries = {}
-  vim.on_key(on_key, NS)
+  hud = M.subscribe(function()
+    if not enabled then
+      return
+    end
+    render()
+    fader.call()
+  end, { scope = "insert_protected" })
   local group = autocmd.group("ui_screenkey_resize", true)
   autocmd.create("VimResized", reposition, {
     group = group,
@@ -597,10 +768,13 @@ function M.disable()
     return
   end
   enabled = false
-  vim.on_key(nil, NS)
+  if hud then
+    hud:unsubscribe()
+  end
   pcall(vim.api.nvim_del_augroup_by_name, "ui_screenkey_resize")
   fader.cancel()
   clear()
+  hud = nil
 end
 
 ---Flip the HUD on/off.
