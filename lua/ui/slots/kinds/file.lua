@@ -337,7 +337,10 @@ function M._read(path, st)
   for i, line in ipairs(lines) do
     line = line:gsub("\r$", ""):gsub("%z", "^@")
     if #line > 2000 then
-      line = line:sub(1, 2000) .. "…"
+      -- Back off to the start of the character byte 2001 belongs to: a cut
+      -- inside a UTF-8 sequence shows as `<e2>` before the ellipsis.
+      local cut = 2000 + vim.str_utf_start(line, 2001)
+      line = line:sub(1, cut) .. "…"
     end
     lines[i] = line
   end

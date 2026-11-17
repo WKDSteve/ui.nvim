@@ -204,6 +204,15 @@ describe("ui.slots preview", function()
       assert.is_truthy(pv.lines[1]:find("…", 1, true))
     end)
 
+    it("cuts a long line of multi-byte characters between characters", function()
+      -- 1999 ASCII bytes, then 3-byte characters: byte 2000 is inside the first one.
+      local text = string.rep("x", 1999) .. string.rep("€", 100)
+      local pv = preview_of({ kind = "file", path = write("euro.txt", text .. "\n") })
+      local shown = pv.lines[1]
+      assert.is_true(vim.str_utfindex(shown, "utf-32") > 0)
+      assert.equals(string.rep("x", 1999) .. "…", shown)
+    end)
+
     it("says that the file is not there, and writes nothing", function()
       local pv = preview_of({ kind = "file", path = dir .. "/gone.txt" })
       assert.is_truthy(pv.lines[1]:find("does not exist", 1, true))
