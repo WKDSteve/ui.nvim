@@ -106,6 +106,10 @@ local function stl_escape(s)
   return (s:gsub("%%", "%%%%"))
 end
 
+--- Public so a theme that embeds a raw value from here (`file()`'s name) can
+--- escape it the same way.
+M.stl_escape = stl_escape
+
 --- Branch name plus added/changed/removed counts from gitsigns' buffer-local
 --- state. Empty when gitsigns has not attached (no head) or has not produced
 --- a status dict yet. The branch name is git-controlled, not this plugin's --
@@ -144,7 +148,7 @@ M.lsp = function()
     for _, client in ipairs(vim.lsp.get_clients()) do
       if not is_internal(client) and client.attached_buffers[M.stbufnr()] then
         local label = " " .. ICON_LSP_CLIENT .. "  LSP "
-        return (vim.o.columns > 100 and (label .. "~ " .. client.name .. " ")) or label
+        return (vim.o.columns > 100 and (label .. "~ " .. stl_escape(client.name) .. " ")) or label
       end
     end
   end
@@ -281,7 +285,9 @@ M.autocmds = function()
     end
 
     local loaded_count = data.message and data.message:match("^(%d+/%d+)") or ""
-    local str = progress .. (data.title or "") .. " " .. (loaded_count or "")
+    -- The title is the server's text ("Indexing 50% ..."): a bare `%` in it
+    -- would be read as a statusline item (or raise E539).
+    local str = progress .. stl_escape(data.title or "") .. " " .. (loaded_count or "")
     M.state.lsp_msg = data.kind == "end" and "" or str
     vim.cmd.redrawstatus()
   end, {

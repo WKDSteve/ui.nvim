@@ -375,6 +375,27 @@ describe("ui.statusline.themes.default", function()
     end
   end)
 
+  it("escapes a % in the file name and in an LSP progress title", function()
+    local buf = vim.api.nvim_create_buf(true, false)
+    vim.api.nvim_buf_set_name(buf, vim.fn.tempname() .. "/50%off.txt")
+    vim.api.nvim_set_current_buf(buf)
+    local built = default_theme.build("default")
+    assert.is_truthy(built.file():find("50%%off.txt", 1, true), "file name escaped")
+
+    local primitives = require("ui.statusline.utils.primitives")
+    primitives.autocmds()
+    vim.api.nvim_exec_autocmds("LspProgress", {
+      pattern = "report",
+      data = { params = { value = { kind = "report", title = "Indexing 50% done" } } },
+    })
+    assert.equals("Indexing 50%% done ", primitives.state.lsp_msg)
+    vim.api.nvim_exec_autocmds("LspProgress", {
+      pattern = "end",
+      data = { params = { value = { kind = "end" } } },
+    })
+    vim.api.nvim_buf_delete(buf, { force = true })
+  end)
+
   it("falls back to the 'default' separator set for an unknown separator_style", function()
     assert.has_no.errors(function()
       default_theme.build("no_such_style")

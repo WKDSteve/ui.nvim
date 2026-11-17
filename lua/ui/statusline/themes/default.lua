@@ -59,7 +59,9 @@ function M.build(separator_style)
 
   T.file = function()
     local icon, name = primitives.file()
-    local label = " " .. name .. (separator_style == "default" and " " or "")
+    -- A file name may hold `%` (`50%off.txt`), which 'statusline' would read
+    -- as an item.
+    local label = " " .. primitives.stl_escape(name) .. (separator_style == "default" and " " or "")
     return "%#St_file# " .. icon .. label .. "%#St_file_sep#" .. sep_r
   end
 
