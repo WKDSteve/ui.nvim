@@ -827,6 +827,8 @@ describe("ui.bindings.keymaps.tabufline.close_n_buffers", function()
 
   it("n == 1 flashes before closing (the plain-keypress path)", function()
     local buf = vim.api.nvim_create_buf(true, false)
+    -- named: the tab's last *unnamed* buffer is never closed (tabufline_state_spec.lua)
+    vim.api.nvim_buf_set_name(buf, vim.fn.tempname() .. "-flash.txt")
     vim.api.nvim_set_current_buf(buf)
     local saved = vim.t.bufs
     vim.t.bufs = { buf }
