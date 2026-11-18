@@ -3,7 +3,8 @@
 -- typeable in Insert mode. An unnamed modified buffer among others is asked about with Save as… / Discard / Cancel.
 --
 -- fileops.nvim is a stand-in: its `save_as_prompt` opens the kit's real text prompt, as fileops' first step does,
--- and records what was typed. The prompt itself is fileops' own sheet (fileops.save).
+-- and records what was typed. The prompt itself is fileops' own sheet (fileops.save). A key that leads into a typed
+-- prompt goes in as `input`: `keys` feeds with `x`, which ends Insert mode again.
 
 local DIALOG = [[require("lib.nvim.ui.kit.confirm").is_open()]]
 local PROMPTING = [[vim.api.nvim_win_get_config(0).relative ~= "" and vim.fn.mode() == "i"]]
@@ -89,7 +90,7 @@ return {
 
     { keys = "<Space>bc" },
     { wait = DIALOG },
-    { keys = "h<CR>", note = "the Save as… button" },
+    { input = "h<CR>", note = "the Save as… button" },
     { wait = PROMPTING, note = "fileops' prompt opens in Insert mode" },
     { input = "x.md<CR>" },
     { wait = [[_G.typed == "x.md"]], note = "what is typed reaches the prompt, not Normal mode" },

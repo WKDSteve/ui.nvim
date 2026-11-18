@@ -342,19 +342,10 @@ M.__needs_close_confirm = needs_close_confirm
 ---@return (fun(bufnr: integer, on_done: fun(saved: boolean)))|nil
 local function save_as_prompt()
   local ok, fileops = pcall(require, "fileops")
-  if not (ok and type(fileops) == "table" and type(fileops.save_as_prompt) == "function") then
-    return nil
+  if ok and type(fileops) == "table" and type(fileops.save_as_prompt) == "function" then
+    return fileops.save_as_prompt
   end
-  -- Started once the dialog that offered it has fully closed: started from inside the
-  -- dialog's answer, the name prompt stood in Normal mode and the name typed next ran as
-  -- commands (found by TESTS/sheets/close-no-name.sheet.lua).
-  return function(bufnr, on_done)
-    vim.schedule(function()
-      if api.nvim_buf_is_valid(bufnr) then
-        fileops.save_as_prompt(bufnr, on_done)
-      end
-    end)
-  end
+  return nil
 end
 
 --- Whether closing `bufnr` would replace it by a new empty buffer: it is the
