@@ -265,6 +265,111 @@ describe("ui.bindings.keymaps.tabufline.state buffer tracking", function()
       assert.is_false(vim.tbl_contains(vim.t.bufs, d))
     end)
 
+    --- Stand-in for fileops.nvim's `save_as_prompt`: records the call, then
+    --- names and writes nothing -- it answers `saved` the way the prompt would.
+    ---@param saved boolean
+    ---@return table calls, fun() restore
+    local function stub_fileops(saved)
+      local calls = {}
+      local before = package.loaded["fileops"]
+      package.loaded["fileops"] = {
+        save_as_prompt = function(bufnr, on_done)
+          calls[#calls + 1] = bufnr
+          if saved then
+            vim.bo[bufnr].modified = false
+          end
+          on_done(saved)
+        end,
+      }
+      return calls, function()
+        package.loaded["fileops"] = before
+      end
+    end
+
+    it("an unnamed modified buffer offers fileops' Save as… and closes once it saved", function()
+      local dialog = require("lib.nvim.ui.dialog")
+      local original = dialog.choose
+      local calls, restore = stub_fileops(true)
+      local asked = {}
+      local d = vim.api.nvim_create_buf(true, false)
+      vim.api.nvim_set_current_buf(d)
+      vim.api.nvim_buf_set_lines(d, 0, -1, false, { "scratch" })
+      vim.api.nvim_set_current_buf(c)
+      dialog.choose = function(_, choices, default, cb)
+        asked[#asked + 1] = { choices = choices, default = default }
+        cb(1) -- Save as…
+      end
+      state.close_buffer(d)
+      dialog.choose = original
+      restore()
+
+      assert.same({ "Save as…", "Discard", "Cancel" }, asked[1].choices)
+      assert.equals(3, asked[1].default)
+      assert.same({ d }, calls)
+      assert.is_false(vim.tbl_contains(vim.t.bufs, d))
+    end)
+
+    describe("the tab's last buffer, unnamed", function()
+      local last
+
+      before_each(function()
+        vim.cmd("tabnew")
+        last = vim.api.nvim_get_current_buf()
+      end)
+
+      after_each(function()
+        if vim.api.nvim_buf_is_valid(last) then
+          vim.bo[last].modified = false
+        end
+        pcall(vim.cmd, "tabclose!")
+        wipe(last)
+      end)
+
+      it("is not closed, and the message says why", function()
+        local original_notify = vim.notify
+        local notes = {}
+        vim.notify = function(msg)
+          notes[#notes + 1] = msg
+        end
+        assert.is_true(state.__is_last_unnamed(last))
+        state.close_buffer()
+        vim.notify = original_notify
+
+        assert.equals(last, vim.api.nvim_get_current_buf())
+        assert.is_true(vim.api.nvim_buf_is_valid(last))
+        assert.matches("last buffer in this tab", notes[1])
+      end)
+
+      it("with unsaved text: says so and offers Save as…, never Discard", function()
+        local dialog = require("lib.nvim.ui.dialog")
+        local original = dialog.choose
+        local calls, restore = stub_fileops(false)
+        local asked = {}
+        vim.api.nvim_buf_set_lines(last, 0, -1, false, { "0" })
+        dialog.choose = function(question, choices, default, cb, _, opts)
+          asked[#asked + 1] =
+            { question = question, choices = choices, default = default, title = opts.title }
+          cb(1) -- Save as…, then the prompt is cancelled
+        end
+        state.close_buffer()
+        dialog.choose = original
+        restore()
+
+        assert.same({ "Save as…", "OK" }, asked[1].choices)
+        assert.equals(2, asked[1].default)
+        assert.equals("Cannot close", asked[1].title)
+        assert.matches("cannot be closed", asked[1].question)
+        assert.same({ last }, calls)
+        assert.is_true(vim.bo[last].modified, "the text stays")
+        assert.equals(last, vim.api.nvim_get_current_buf())
+      end)
+
+      it("a named last buffer or one among others is not affected", function()
+        vim.api.nvim_buf_set_name(last, vim.fn.tempname() .. "-named.txt")
+        assert.is_false(state.__is_last_unnamed(last))
+      end)
+    end)
+
     it("closes an explicit bufnr rather than only the current one", function()
       vim.api.nvim_set_current_buf(c)
       state.close_buffer(a)

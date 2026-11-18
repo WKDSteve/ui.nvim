@@ -148,6 +148,14 @@ is deliberately much shorter than the flash itself (~120ms, which still runs
 its full course): just long enough for the flash to reach the screen once, not
 long enough to make a click on an "x" feel laggy.
 
+An unsaved buffer without a file name (`[No Name]`) is asked about with
+"Save as…" / "Discard" / "Cancel" when [fileops.nvim](https://github.com/WKDSteve/fileops.nvim)
+is installed ("Save as…" asks for a name and a folder below the cwd), and
+with "Discard" / "Cancel" without it. When that unnamed buffer is the last one
+in the tab, it is not closed at all -- closing would only put a new empty
+`[No Name]` in its place: a message says so, and with unsaved text it offers
+"Save as…".
+
 ### Tabs
 
 | Key | `opts.keymaps` name | Mode | Does |

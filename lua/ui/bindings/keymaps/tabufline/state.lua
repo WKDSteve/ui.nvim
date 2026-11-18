@@ -337,6 +337,54 @@ local function needs_close_confirm(bufnr)
 end
 M.__needs_close_confirm = needs_close_confirm
 
+--- fileops.nvim's "ask for a name and a folder, then save" (`save_as_prompt`),
+--- or nil without fileops -- a soft dependency, looked up per call.
+---@return (fun(bufnr: integer, on_done: fun(saved: boolean)))|nil
+local function save_as_prompt()
+  local ok, fileops = pcall(require, "fileops")
+  if ok and type(fileops) == "table" and type(fileops.save_as_prompt) == "function" then
+    return fileops.save_as_prompt
+  end
+  return nil
+end
+
+--- Whether closing `bufnr` would replace it by a new empty buffer: it is the
+--- current buffer, a listed plain buffer without a name, and the only one in
+--- the tab's list (the `enew` branch of `close_buffer`).
+---@param bufnr integer
+---@return boolean
+local function is_last_unnamed(bufnr)
+  if not api.nvim_buf_is_valid(bufnr) or api.nvim_get_current_buf() ~= bufnr then
+    return false
+  end
+  if api.nvim_buf_get_name(bufnr) ~= "" or vim.bo[bufnr].buftype ~= "" then
+    return false
+  end
+  if not vim.bo[bufnr].buflisted or api.nvim_win_get_config(0).zindex then
+    return false
+  end
+  local bufs = vim.t.bufs or {}
+  return not (buf_index(bufnr) and #bufs > 1)
+end
+M.__is_last_unnamed = is_last_unnamed
+
+--- Say why the last unnamed buffer stays. With unsaved text (and fileops.nvim
+--- installed) the message offers to save it under a name.
+---@param bufnr integer
+local function tell_last_unnamed(bufnr)
+  local msg = '"[No Name]" is the last buffer in this tab -- it cannot be closed.'
+  local save_as = vim.bo[bufnr].modified and save_as_prompt() or nil
+  if not save_as then
+    vim.notify("[ui.tabufline] " .. msg, vim.log.levels.INFO)
+    return
+  end
+  require("lib.nvim.ui.dialog").choose(msg, { "Save as…", "OK" }, 2, function(choice)
+    if choice == 1 and api.nvim_buf_is_valid(bufnr) then
+      save_as(bufnr, function() end)
+    end
+  end, nil, { title = "Cannot close", kind = "info" })
+end
+
 --- Close `bufnr` (default: the current buffer), landing on a sensible
 --- neighbour rather than whatever Neovim's own `:bdelete` would fall back
 --- to. Ported from `nvchad.tabufline.close_buffer`.
@@ -349,18 +397,29 @@ M.__needs_close_confirm = needs_close_confirm
 function M.close_buffer(bufnr, skip_confirm)
   bufnr = bufnr or api.nvim_get_current_buf()
 
+  -- The tab's last buffer, unnamed: closing it would only put a fresh empty
+  -- `[No Name]` in its place, so it is not closed at all -- and the message says
+  -- that, instead of a Save/Discard question whose "Discard" would merely wipe it.
+  if not skip_confirm and is_last_unnamed(bufnr) then
+    tell_last_unnamed(bufnr)
+    return
+  end
+
   -- A modified buffer is asked about through the shared dialog (Save / Discard / Cancel)
   -- instead of `confirm bd`'s prompt in the message area. The answer may come later, so the
   -- close itself re-enters below with the question settled.
   if not skip_confirm and needs_close_confirm(bufnr) then
     local name = vim.fn.fnamemodify(api.nvim_buf_get_name(bufnr), ":t")
-    -- an unnamed buffer has no file to write to (`:write` would only raise E32): no "Save" for it
+    -- An unnamed buffer has no file to write to (`:write` would only raise E32): its "Save"
+    -- is fileops.nvim's name-and-folder prompt, and there is none without fileops.
     local unnamed = name == ""
+    local save_as = unnamed and save_as_prompt() or nil
     if unnamed then
       name = "[No Name]"
     end
-    local choices = unnamed and { "Discard", "Cancel" } or { "Save", "Discard", "Cancel" }
-    local discard = unnamed and 1 or 2
+    local choices = (unnamed and not save_as) and { "Discard", "Cancel" }
+      or { unnamed and "Save as…" or "Save", "Discard", "Cancel" }
+    local discard = #choices - 1
     require("lib.nvim.ui.dialog").choose(
       string.format('Save changes to "%s"?', name),
       choices,
@@ -371,6 +430,12 @@ function M.close_buffer(bufnr, skip_confirm)
         end
         if choice == discard then
           M.close_buffer(bufnr, true)
+        elseif choice == 1 and save_as then
+          save_as(bufnr, function(saved)
+            if saved and api.nvim_buf_is_valid(bufnr) then
+              M.close_buffer(bufnr, true)
+            end
+          end)
         elseif choice == 1 and not unnamed then
           local wrote, err = pcall(api.nvim_buf_call, bufnr, function()
             vim.cmd("write")
