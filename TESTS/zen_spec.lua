@@ -120,6 +120,46 @@ describe("ui.zen", function()
     assert.is_truthy(warned and warned:find("E11", 1, true))
   end)
 
+  it("closes the zen float too when nvim_open_win fails after opening it", function()
+    -- nvim_open_win reports an error of an autocmd that ran on entering as its own, but the window
+    -- is open and current by then (nvim 0.12.2: a throwing BufEnter on entering another buffer).
+    -- The zen float shows the buffer it came from, where no autocmd made it throw in 0.12.2, so
+    -- the call is replaced by one that opens the window and then fails the same way.
+    local _, origin = open_buffer()
+    vim.o.laststatus = 2
+    local wins_before = #vim.api.nvim_list_wins()
+    local real_open, real_notify = vim.api.nvim_open_win, vim.notify
+    local calls, warned = 0, nil
+    vim.api.nvim_open_win = function(...)
+      calls = calls + 1
+      local win = real_open(...)
+      if calls == 2 then
+        error('BufEnter Autocommands for "*": foreign plugin failed')
+      end
+      return win
+    end
+    vim.notify = function(msg)
+      warned = msg
+    end
+    local ok, win = pcall(zen.open)
+    vim.api.nvim_open_win, vim.notify = real_open, real_notify
+    assert.is_true(ok, tostring(win))
+    assert.is_nil(win)
+    assert.is_false(zen.is_open())
+    assert.equals(2, vim.o.laststatus)
+    assert.equals(
+      wins_before,
+      #vim.api.nvim_list_wins(),
+      "neither the backdrop nor the zen float is left open"
+    )
+    assert.equals(
+      origin,
+      vim.api.nvim_get_current_win(),
+      "the cursor is back in the window it came from"
+    )
+    assert.is_truthy(warned and warned:find("foreign plugin failed", 1, true))
+  end)
+
   it("toggles, and setup() changes the width live", function()
     open_buffer()
     assert.is_true(zen.toggle())

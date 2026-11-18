@@ -30,6 +30,7 @@ Behavior changes of ui.nvim that a user or a host config can notice. The format 
 - Statusline: a module that returns a number shows it, one that returns a table or `true` renders empty with a warning, instead of blanking the whole statusline on every redraw. A `%` in the file name (`50%off.txt`), in an LSP progress title, in a client name or in the cwd folder name is shown as it is instead of being read as a statusline item.
 - Tabline: a buffer name with non-ASCII characters is cut between characters and the chip keeps its width (it came out a cell too narrow per umlaut, and a cut could show `<c3>`).
 - `:UI zen` where the window cannot open (the command-line window, a tiny terminal) warns and puts statusline, tabline and the backdrop back instead of leaving them hidden.
+- `:UI zen` also closes its own float when opening it failed only after the window was open (an error of a foreign autocmd that `nvim_open_win` reports as its own), instead of leaving it on screen with no way to close it by `:UI zen`.
 - Sticky context: a tab-indented line is pinned at the source's `tabstop`, and `:set number`/`signcolumn` redraws the gutter at once.
 - `:UI color`: `<CR>` no longer writes into a line that changed while the picker was open; it warns, and the pick stays in the yank register.
 - `:UI notify history` keeps working after a plugin passed a non-string `title`.

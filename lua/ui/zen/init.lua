@@ -259,6 +259,10 @@ function M.open()
   vim.wo[backdrop].winhighlight = "Normal:" .. backdrop_group() .. ",NormalNC:" .. backdrop_group()
   vim.wo[backdrop].winblend = 0
 
+  local wins_before = {}
+  for _, w in ipairs(api.nvim_list_wins()) do
+    wins_before[w] = true
+  end
   local ok_win, win = pcall(api.nvim_open_win, buf, true, {
     relative = "editor",
     width = g.width,
@@ -270,6 +274,20 @@ function M.open()
     zindex = 45,
   })
   if not ok_win then
+    -- nvim_open_win reports an error of an autocmd that ran on entering (a foreign BufEnter) as
+    -- its own, with the window already open and current: close that float too, or it stays
+    -- behind with no session that close() could reach.
+    for _, w in ipairs(api.nvim_list_wins()) do
+      if not wins_before[w] and w ~= backdrop and api.nvim_win_get_buf(w) == buf then
+        local wcfg = api.nvim_win_get_config(w)
+        if wcfg.relative == "editor" and wcfg.zindex == 45 then
+          pcall(api.nvim_win_close, w, true)
+        end
+      end
+    end
+    if api.nvim_win_is_valid(origin) and api.nvim_get_current_win() ~= origin then
+      pcall(api.nvim_set_current_win, origin)
+    end
     abort(win, backdrop)
     return nil
   end
