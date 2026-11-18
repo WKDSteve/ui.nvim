@@ -413,6 +413,19 @@ describe("ui.statusline.themes.default", function()
     vim.api.nvim_buf_delete(buf, { force = true })
   end)
 
+  it("escapes a % in the cwd folder name", function()
+    local dir = vim.fn.tempname() .. "/50%off"
+    vim.fn.mkdir(dir, "p")
+    local prev_dir, prev_cols = vim.uv.cwd(), vim.o.columns
+    vim.o.columns = 120
+    vim.cmd.cd(vim.fn.fnameescape(dir))
+    local ok, out = pcall(default_theme.build("default").cwd)
+    vim.cmd.cd(vim.fn.fnameescape(prev_dir))
+    vim.o.columns = prev_cols
+    assert.is_true(ok, out)
+    assert.is_truthy(out:find(" 50%%off ", 1, true), "cwd name escaped: " .. out)
+  end)
+
   it("falls back to the 'default' separator set for an unknown separator_style", function()
     assert.has_no.errors(function()
       default_theme.build("no_such_style")

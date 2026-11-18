@@ -82,7 +82,11 @@ function M.build(separator_style)
   T.cwd = function()
     local icon = "%#St_cwd_icon#" .. "󰉋 "
     local name = vim.uv.cwd()
-    name = "%#St_cwd_text#" .. " " .. (name:match("([^/\\]+)[/\\]*$") or name) .. " "
+    -- A folder name may hold `%` (`50%off`), which 'statusline' would read as an item.
+    name = "%#St_cwd_text#"
+      .. " "
+      .. primitives.stl_escape(name:match("([^/\\]+)[/\\]*$") or name)
+      .. " "
     return (vim.o.columns > 85 and ("%#St_cwd_sep#" .. sep_l .. icon .. name)) or ""
   end
 
