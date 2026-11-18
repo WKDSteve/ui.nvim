@@ -414,14 +414,15 @@ describe("ui.statusline.themes.default", function()
   end)
 
   it("escapes a % in the cwd folder name", function()
-    local dir = vim.fn.tempname() .. "/50%off"
-    vim.fn.mkdir(dir, "p")
-    local prev_dir, prev_cols = vim.uv.cwd(), vim.o.columns
-    vim.o.columns = 120
-    vim.cmd.cd(vim.fn.fnameescape(dir))
+    -- Stubbed, not a real `:cd` and `columns` change: DirChanged and the redraw they cause in a
+    -- headless run are what made Windows runs exit 139/127.
+    local real_cwd, real_o = vim.uv.cwd, vim.o
+    vim.uv.cwd = function()
+      return "/x/50%off"
+    end
+    vim.o = setmetatable({ columns = 120 }, { __index = real_o })
     local ok, out = pcall(default_theme.build("default").cwd)
-    vim.cmd.cd(vim.fn.fnameescape(prev_dir))
-    vim.o.columns = prev_cols
+    vim.uv.cwd, vim.o = real_cwd, real_o
     assert.is_true(ok, out)
     assert.is_truthy(out:find(" 50%%off ", 1, true), "cwd name escaped: " .. out)
   end)
