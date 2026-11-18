@@ -300,6 +300,10 @@ describe("ui.bindings.keymaps.tabufline.state buffer tracking", function()
         cb(1) -- Save as…
       end
       state.close_buffer(d)
+      -- Save as… starts on the next loop turn, after the dialog closed
+      vim.wait(1000, function()
+        return #calls > 0
+      end)
       dialog.choose = original
       restore()
 
@@ -352,6 +356,10 @@ describe("ui.bindings.keymaps.tabufline.state buffer tracking", function()
           cb(1) -- Save as…, then the prompt is cancelled
         end
         state.close_buffer()
+        -- Save as… starts on the next loop turn, after the dialog closed
+        vim.wait(1000, function()
+          return #calls > 0
+        end)
         dialog.choose = original
         restore()
 
