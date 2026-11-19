@@ -104,7 +104,9 @@ end
 local function open_context_menu()
   local contextmenu = require("ui.contextmenu")
 
-  local _, current = list_branches()
+  -- Only the name of the current branch: the list is the switcher's business,
+  -- and each git call here blocks the editor before the menu opens.
+  local current = git.current_branch()
   local items = {}
   contextmenu.group(
     items,

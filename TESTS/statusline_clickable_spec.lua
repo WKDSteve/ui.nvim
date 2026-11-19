@@ -407,6 +407,37 @@ describe("ui.statusline.modules.git_clickable", function()
     assert.is_true(#opened_with > 0)
   end)
 
+  -- The menu needs the current branch only (for "Copy branch name"); listing
+  -- every branch as well was one more blocking git per right click, seen
+  -- by `testing perf` (sheet statusline.git-branch).
+  it("right click asks git for the current branch only, not the branch list", function()
+    mock_system({
+      ["for-each-ref"] = { code = 0, stdout = "main\n", stderr = "" },
+      ["symbolic-ref"] = { code = 0, stdout = "main\n", stderr = "" },
+    })
+    local mocked = vim.system
+    local subcommands = {}
+    ---@diagnostic disable-next-line: duplicate-set-field
+    vim.system = function(cmd, opts, cb)
+      subcommands[#subcommands + 1] = cmd[2]
+      return mocked(cmd, opts, cb)
+    end
+
+    local contextmenu = require("ui.contextmenu")
+    local original_open = contextmenu.open
+    local opened_with = nil
+    ---@diagnostic disable-next-line: duplicate-set-field
+    contextmenu.open = function(items)
+      opened_with = items
+    end
+
+    clickable._dispatch(click_id, "r")
+    contextmenu.open = original_open
+
+    assert.equals("table", type(opened_with))
+    assert.same({ "symbolic-ref" }, subcommands)
+  end)
+
   it("right click honours ui.setup({ menu = false })", function()
     mock_system({
       ["for-each-ref"] = { code = 0, stdout = "main\n", stderr = "" },
