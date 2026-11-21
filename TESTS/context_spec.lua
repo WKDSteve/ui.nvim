@@ -170,6 +170,59 @@ describe("ui.context", function()
     assert.is_nil(lines[2]:find("\t", 1, true))
   end)
 
+  -- `'tabstop'` was missing from the overlay's cache key: `:set ts=2`
+  -- changes no text (and no changedtick), so the old grid stayed.
+  it("redraws a tab-indented context line when only 'tabstop' changes", function()
+    if not has_lua_parser then
+      pending("no Lua parser available")
+      return
+    end
+    local win, buf = open_source()
+    vim.api.nvim_buf_set_lines(buf, 3, 4, false, { "\tif a > b then" })
+    vim.bo[buf].tabstop = 4
+    context.enable()
+    scroll_to(win, 7)
+    context.refresh(win)
+    assert.truthy(overlay_lines(win)[2]:find(" 4     if a > b then", 1, true))
+    vim.bo[buf].tabstop = 2
+    context.refresh(win)
+    local line = overlay_lines(win)[2]
+    assert.truthy(line:find(" 4   if a > b then", 1, true), "tabstop 2: " .. line)
+  end)
+
+  it("expands a long scope line full of tabs in linear time, after an edit", function()
+    if not has_lua_parser then
+      pending("no Lua parser available")
+      return
+    end
+    -- expand_tabs walked the line with strcharpart per character, which
+    -- rescans the whole line each time: ~0.5 s per refresh at 10 kB, ~14 s
+    -- at 50 kB -- and changedtick in the key re-ran it after every edit.
+    -- Valid Lua (the tabs sit in a comment): `x x x ...` would be a syntax
+    -- error whose recovery costs the source's own parser seconds.
+    local lines = { "local function outer() --" .. string.rep("\tx", 25000) }
+    for i = 1, 30 do
+      lines[#lines + 1] = ("  local v%d = %d"):format(i, i)
+    end
+    lines[#lines + 1] = "end"
+    local win, buf = open_source()
+    vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+    context.enable()
+    scroll_to(win, 10)
+    context.refresh(win)
+
+    vim.api.nvim_buf_set_lines(buf, 20, 21, false, { "  local edited = 1" })
+    local t0 = vim.uv.hrtime()
+    local shown = context.refresh(win)
+    local ms = (vim.uv.hrtime() - t0) / 1e6
+
+    assert.equals(1, shown)
+    assert.is_true(ms < 500, ("refresh took %.0f ms"):format(ms))
+    local first = overlay_lines(win)[1]
+    assert.truthy(first:find("local function outer%(%) %-%-  +x  +x"), first)
+    assert.is_nil(first:find("\t", 1, true))
+  end)
+
   it("redraws the gutter when 'number' changes with the same context", function()
     if not has_lua_parser then
       pending("no Lua parser available")

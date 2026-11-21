@@ -1091,25 +1091,39 @@ end
 ---`s` with every tab replaced by the spaces up to the next multiple of `ts`,
 ---counted in display cells from the start of `s` (where the source window's
 ---text area starts too).
+---
+---Linear: it walks the tab-free runs between tabs (`string.find`, one
+---`strwidth` per run), not character by character -- the old
+---`strcharpart(s, i, 1)` per character rescanned and copied the whole line
+---each time, ~0.5 s per refresh for a 10 kB scope head with tabs and ~14 s
+---at 50 kB, after every edit (changedtick is in the cache key). It stops
+---once `max_cells` cells are out: the overlay is cut to the window width
+---anyway, so the rest of a huge line is never shown.
 ---@param s string
 ---@param ts integer
+---@param max_cells? integer
 ---@return string
-local function expand_tabs(s, ts)
+local function expand_tabs(s, ts, max_cells)
   if not s:find("\t", 1, true) then
     return s
   end
   ts = (type(ts) == "number" and ts > 0) and ts or 8
-  local out, col = {}, 0
-  for i = 0, vim.fn.strchars(s) - 1 do
-    local ch = vim.fn.strcharpart(s, i, 1)
-    if ch == "\t" then
-      local n = ts - (col % ts)
-      out[#out + 1] = string.rep(" ", n)
-      col = col + n
-    else
-      out[#out + 1] = ch
-      col = col + vim.fn.strwidth(ch)
+  max_cells = max_cells or math.huge
+  local out, col, pos = {}, 0, 1
+  while pos <= #s and col < max_cells do
+    local tab = s:find("\t", pos, true)
+    local run = s:sub(pos, (tab or (#s + 1)) - 1)
+    if run ~= "" then
+      out[#out + 1] = run
+      col = col + vim.fn.strwidth(run)
     end
+    if not tab then
+      break
+    end
+    local n = ts - (col % ts)
+    out[#out + 1] = string.rep(" ", n)
+    col = col + n
+    pos = tab + 1
   end
   return table.concat(out)
 end
@@ -1165,7 +1179,8 @@ local function draw_mimic(win, buf, entries)
   -- is cheap and refresh() upstream is already debounced. Height is in the
   -- key too: a `"bottom"` anchor's row depends on it, not just on width.
   -- So are the gutter width and `'number'`: `:set number`/`signcolumn`, or
-  -- the number column growing at line 10000, change every row drawn.
+  -- the number column growing at line 10000, change every row drawn. And
+  -- `'tabstop'`: `:set ts=2` changes no text, but every expanded tab.
   local info = vim.fn.getwininfo(win)[1]
   local textoff = info and info.textoff or 0
   local key = buf
@@ -1185,6 +1200,8 @@ local function draw_mimic(win, buf, entries)
     .. "|"
     .. textoff
     .. (vim.wo[win].number and "n" or "")
+    .. "|ts"
+    .. vim.bo[buf].tabstop
   local f = floats[win]
   if f and f.key == key and vim.api.nvim_win_is_valid(f.win) then
     return
@@ -1203,7 +1220,9 @@ local function draw_mimic(win, buf, entries)
     -- The overlay buffer has its own 'tabstop' (8): a tab kept as it is would
     -- shift the pinned line against the source below it, and `strwidth`
     -- counts it as one cell. Spaces at the source's tab stops instead.
-    text = expand_tabs(text, vim.bo[buf].tabstop)
+    -- Cut a little past any window width: `trunc_to_width` below still sees
+    -- the line overflow and marks it.
+    text = expand_tabs(text, vim.bo[buf].tabstop, vim.o.columns + vim.bo[buf].tabstop + 1)
     local g = gutter(win, e.row, textoff)
     gutters[i] = #g
     raw[i] = g .. text
