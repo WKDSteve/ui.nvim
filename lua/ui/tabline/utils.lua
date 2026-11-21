@@ -495,19 +495,46 @@ local function devicon_for_buf(bufnr)
   return result.icon, result.color
 end
 
+--- Tail filenames of a tabline's buffer list, counted once per render: the
+--- input `style_buf` dedupes each chip's name against. Computing it per chip
+--- (as the NvChad port did, a walk over every buffer for every chip) cost
+--- O(n²) `nvim_buf_get_name` calls on every redraw -- 200 buffers: ~36 000
+--- calls, ~48 ms per render.
+---@class Ui.Tabline.NameCounts
+---@field counts table<string, integer> tail filename -> how many listed buffers carry it
+---@field member table<integer, true> the buffers that were counted
+
+---@param bufs integer[] # the buffer list being rendered (`vim.t.bufs`)
+---@return Ui.Tabline.NameCounts
+function M.name_counts(bufs)
+  local counts, member = {}, {}
+  for _, nr in ipairs(bufs) do
+    if api.nvim_buf_is_valid(nr) then
+      local path = api.nvim_buf_get_name(nr)
+      if path ~= "" then
+        local tail = filename(path)
+        counts[tail] = (counts[tail] or 0) + 1
+        member[nr] = true
+      end
+    end
+  end
+  return { counts = counts, member = member }
+end
+
 --- `name` deduplicated against every other buffer's tail filename in
 --- `vim.t.bufs` -- two open `init.lua`s become `plugins/init.lua` and
 --- `lsp/init.lua` instead of two indistinguishable "init.lua" chips. Ported
---- from `nvchad.tabufline.utils.gen_unique_name`.
+--- from `nvchad.tabufline.utils.gen_unique_name`, reading a per-render
+--- `M.name_counts` instead of walking every buffer per chip.
 ---@param name string
----@param index integer # this buffer's position in `vim.t.bufs`
+---@param bufnr integer
+---@param path string # `bufnr`'s full name
+---@param names Ui.Tabline.NameCounts
 ---@return string|nil # nil when `name` is already unique
-local function gen_unique_name(name, index)
-  local bufs = vim.t.bufs or {}
-  for i, nr in ipairs(bufs) do
-    if i ~= index and api.nvim_buf_is_valid(nr) and filename(api.nvim_buf_get_name(nr)) == name then
-      return vim.fn.fnamemodify(api.nvim_buf_get_name(bufs[index]), ":h:t") .. "/" .. name
-    end
+local function gen_unique_name(name, bufnr, path, names)
+  local others = (names.counts[name] or 0) - (names.member[bufnr] and 1 or 0)
+  if others > 0 then
+    return vim.fn.fnamemodify(path, ":h:t") .. "/" .. name
   end
   return nil
 end
@@ -575,9 +602,11 @@ end
 ---@param index integer # this buffer's 1-based position in `vim.t.bufs`
 ---@param width integer # target chip width in columns; `bufwidth` in the tabline config
 ---@param is_pinned? boolean # precomputed pin state; queried via `state.is_pinned(bufnr)` when omitted -- `ui.tabline.modules.buffers()` already knows this per chip (it just split pinned from unpinned) and passes it straight in, so this hot per-chip, per-redraw path does not pay for a second `vim.t.ui_pinned` read on top of that split's own one
+---@param names? Ui.Tabline.NameCounts # `M.name_counts(vim.t.bufs)`, computed ONCE per render by the caller (`ui.tabline.modules.buffers()`); counted here when omitted
 ---@return string
-function M.style_buf(bufnr, index, width, is_pinned)
+function M.style_buf(bufnr, index, width, is_pinned, names)
   M.register_click_handlers()
+  local _ = index -- kept for callers; the dedupe works from `names` now
 
   local is_current = api.nvim_get_current_buf() == bufnr
   local mid_flash = M.is_flashing(bufnr)
@@ -592,7 +621,8 @@ function M.style_buf(bufnr, index, width, is_pinned)
   local ok_name, raw_path = pcall(api.nvim_buf_get_name, bufnr)
   local name = (ok_name and raw_path ~= "") and filename(raw_path) or "[No Name]"
   if name ~= "[No Name]" then
-    name = gen_unique_name(name, index) or name
+    names = names or M.name_counts(vim.t.bufs or {})
+    name = gen_unique_name(name, bufnr, raw_path, names) or name
   end
 
   -- Always a click target, modified or not: a plain "unsaved changes" dot

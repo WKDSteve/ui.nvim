@@ -231,6 +231,9 @@ function M.buffers(cfg)
   -- cost once per open buffer, per redraw, for no reason (the pin set does
   -- not change mid-loop).
   local pinned_list = state.pinned_bufs()
+  -- The tail-name counts every chip dedupes its name against: once per
+  -- render, not a walk over all buffers per chip (O(n^2) before).
+  local names = utils.name_counts(bufs)
   local pinned_bufs, other_bufs = {}, {}
   for i, bufnr in ipairs(bufs) do
     if vim.tbl_contains(pinned_list, bufnr) then
@@ -246,7 +249,7 @@ function M.buffers(cfg)
     -- already known pinned by construction above, so `style_buf` does not
     -- need to re-query `state.is_pinned` (another `vim.t.ui_pinned` read)
     -- for it.
-    chips[#chips + 1] = utils.style_buf(entry.bufnr, entry.index, bufwidth, true)
+    chips[#chips + 1] = utils.style_buf(entry.bufnr, entry.index, bufwidth, true, names)
     chip_bufs[#chip_bufs + 1] = entry.bufnr
   end
   if #chips * (bufwidth + ICON_WIDTH_SLACK) >= space then
@@ -271,7 +274,7 @@ function M.buffers(cfg)
         flush_right = true
         break
       end
-      chips[#chips + 1] = utils.style_buf(entry.bufnr, entry.index, bufwidth, false)
+      chips[#chips + 1] = utils.style_buf(entry.bufnr, entry.index, bufwidth, false, names)
       chip_bufs[#chip_bufs + 1] = entry.bufnr
     end
   else
@@ -289,7 +292,7 @@ function M.buffers(cfg)
 
       seen_current = seen_current or (cur == entry.bufnr)
       unpinned_chips[#unpinned_chips + 1] =
-        utils.style_buf(entry.bufnr, entry.index, bufwidth, false)
+        utils.style_buf(entry.bufnr, entry.index, bufwidth, false, names)
       unpinned_bufs[#unpinned_bufs + 1] = entry.bufnr
     end
     vim.list_extend(chips, unpinned_chips)

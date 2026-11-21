@@ -195,6 +195,82 @@ describe("ui.tabline.modules", function()
     end
   )
 
+  -- gen_unique_name used to walk every buffer for every chip: O(n^2)
+  -- `nvim_buf_get_name` calls per redraw (200 buffers: ~36 000 calls,
+  -- ~48 ms per render). The tail-name counts are taken once per render now,
+  -- so the calls grow linearly with the buffer count.
+  it("asks each buffer's name a bounded number of times per render, not once per chip", function()
+    ---@param n integer
+    ---@return integer
+    local function get_name_calls_for(n)
+      local dir = vim.fn.tempname()
+      local saved = vim.t.bufs
+      local bufs = {}
+      for i = 1, n do
+        local b = vim.api.nvim_create_buf(true, false)
+        -- Unique tails: the old walk stopped at the first clash, so a unique
+        -- name is the case that walked every buffer.
+        vim.api.nvim_buf_set_name(b, ("%s/f%d.lua"):format(dir, i))
+        bufs[#bufs + 1] = b
+      end
+      vim.t.bufs = bufs
+      local cfg = vim.tbl_extend("force", default_cfg, { bufwidth = 12 })
+      local saved_columns = vim.o.columns
+      vim.o.columns = 2000
+
+      local calls = 0
+      local original = vim.api.nvim_buf_get_name
+      vim.api.nvim_buf_get_name = function(...)
+        calls = calls + 1
+        return original(...)
+      end
+      local ok, err = pcall(modules.buffers, cfg)
+      vim.api.nvim_buf_get_name = original
+
+      vim.o.columns = saved_columns
+      for _, b in ipairs(bufs) do
+        pcall(vim.api.nvim_buf_delete, b, { force = true })
+      end
+      vim.t.bufs = saved
+      assert.is_true(ok, tostring(err))
+      return calls
+    end
+
+    local calls_10 = get_name_calls_for(10)
+    local calls_40 = get_name_calls_for(40)
+    -- Linear: four times the buffers, about four times the calls (plus a
+    -- constant). Quadratic would be ~16 times.
+    assert.is_true(
+      calls_40 <= 4 * calls_10 + 20,
+      ("10 bufs: %d calls, 40 bufs: %d"):format(calls_10, calls_40)
+    )
+  end)
+
+  it("still names two buffers with the same tail apart by their folder", function()
+    local dir = vim.fn.tempname()
+    local saved = vim.t.bufs
+    local a = vim.api.nvim_create_buf(true, false)
+    local b = vim.api.nvim_create_buf(true, false)
+    local c = vim.api.nvim_create_buf(true, false)
+    vim.api.nvim_buf_set_name(a, dir .. "/plugins/init.lua")
+    vim.api.nvim_buf_set_name(b, dir .. "/lsp/init.lua")
+    vim.api.nvim_buf_set_name(c, dir .. "/alone.lua")
+    vim.t.bufs = { a, b, c }
+    local utils = require("ui.tabline.utils")
+    local names = utils.name_counts(vim.t.bufs)
+    local chip_a = utils.style_buf(a, 1, 40, false, names)
+    local chip_b = utils.style_buf(b, 2, 40, false)
+    local chip_c = utils.style_buf(c, 3, 40, false, names)
+    vim.t.bufs = saved
+    for _, x in ipairs({ a, b, c }) do
+      pcall(vim.api.nvim_buf_delete, x, { force = true })
+    end
+    assert.is_truthy(chip_a:find("plugins/init.lua", 1, true), chip_a)
+    assert.is_truthy(chip_b:find("lsp/init.lua", 1, true), chip_b)
+    assert.is_truthy(chip_c:find("alone.lua", 1, true), chip_c)
+    assert.is_nil(chip_c:find("/alone.lua", 1, true), chip_c)
+  end)
+
   it("computes available_space once per buffers() call, not once per buffer", function()
     -- Regression: available_space(cfg) used to be called from inside the
     -- overflow loop, once per buffer in vim.t.bufs -- pure waste, since
