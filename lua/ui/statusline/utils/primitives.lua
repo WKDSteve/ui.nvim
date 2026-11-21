@@ -258,8 +258,53 @@ local SPINNERS = { "", "󰪞", "󰪟", "󰪠", "󰪡", "󰪢", "󰪣", "󰪤", "
 -- re-running setup).
 local autocmds_registered = false
 
+--- Statusline redraws per second at most while progress streams in.
+--- rust-analyzer or jdtls report hundreds of times a second, and every
+--- `redrawstatus` is a full statusline render; ~10 a second is as fast as a
+--- reader follows a spinner.
+local REDRAW_MS = 100
+
+--- Running progress, one entry per client and token (`<client_id>:<token>`):
+--- a server's `end` removes only its own entry, never another server's
+--- message that is still running. `seq` orders them; the newest is shown.
+---@type table<string, { msg: string, seq: integer, title: string }>
+local active = {}
+local active_seq = 0
+
+--- The statusline redraw the progress handler asks for -- a field so a spec
+--- can count the calls the throttle lets through.
+---@return nil
+M._redraw = function()
+  vim.cmd.redrawstatus()
+end
+
+local redraw_throttle = nil
+
+---@return nil
+local function request_redraw()
+  if not redraw_throttle then
+    redraw_throttle = require("lib.nvim.patterns.throttle").new(function()
+      M._redraw()
+    end, REDRAW_MS)
+  end
+  redraw_throttle.call()
+end
+
+--- `M.state.lsp_msg` from `active`: the most recently updated running entry.
+---@return nil
+local function show_newest()
+  local best = nil
+  for _, entry in pairs(active) do
+    if not best or entry.seq > best.seq then
+      best = entry
+    end
+  end
+  M.state.lsp_msg = best and best.msg or ""
+end
+
 --- Register the `LspProgress` autocmd that keeps `M.state.lsp_msg` current
---- and redraws the statusline as progress comes in. Idempotent -- a second
+--- and redraws the statusline as progress comes in (throttled to one redraw
+--- per `REDRAW_MS`, the last state always drawn). Idempotent -- a second
 --- call is a no-op rather than a second handler.
 ---@return nil
 M.autocmds = function()
@@ -272,28 +317,55 @@ M.autocmds = function()
   local group = autocmd.group("ui_statusline_lsp_progress", true)
 
   autocmd.create("LspProgress", function(args)
-    if not args.data or not args.data.params then
+    if not args.data or not args.data.params or type(args.data.params.value) ~= "table" then
       return
     end
 
     local data = args.data.params.value
-    local progress = ""
+    local key = tostring(args.data.client_id or 0) .. ":" .. tostring(args.data.params.token or "")
 
-    if data.percentage then
-      local idx = math.max(1, math.floor(data.percentage / 10))
-      progress = SPINNERS[idx] .. " " .. data.percentage .. "%% "
+    if data.kind == "end" then
+      active[key] = nil
+    else
+      local progress = ""
+      if type(data.percentage) == "number" then
+        local idx = math.min(#SPINNERS, math.max(1, math.floor(data.percentage / 10)))
+        progress = SPINNERS[idx] .. " " .. data.percentage .. "%% "
+      end
+      local loaded_count = type(data.message) == "string" and data.message:match("^(%d+/%d+)") or ""
+      -- A `report` carries no title: keep the one its `begin` gave.
+      local title = data.title or (active[key] and active[key].title) or ""
+      -- The title is the server's text ("Indexing 50% ..."): a bare `%` in it
+      -- would be read as a statusline item (or raise E539).
+      local str = progress .. stl_escape(title) .. " " .. loaded_count
+      active_seq = active_seq + 1
+      active[key] = { msg = str, seq = active_seq, title = title }
     end
-
-    local loaded_count = data.message and data.message:match("^(%d+/%d+)") or ""
-    -- The title is the server's text ("Indexing 50% ..."): a bare `%` in it
-    -- would be read as a statusline item (or raise E539).
-    local str = progress .. stl_escape(data.title or "") .. " " .. (loaded_count or "")
-    M.state.lsp_msg = data.kind == "end" and "" or str
-    vim.cmd.redrawstatus()
+    show_newest()
+    request_redraw()
   end, {
     group = group,
     pattern = { "begin", "report", "end" },
     desc = "ui.statusline: track LSP progress into the statusline",
+  })
+
+  -- A server that exits mid-progress never sends its `end`.
+  autocmd.create("LspDetach", function(args)
+    local prefix = tostring(args.data and args.data.client_id or 0) .. ":"
+    local changed = false
+    for key in pairs(active) do
+      if key:sub(1, #prefix) == prefix then
+        active[key] = nil
+        changed = true
+      end
+    end
+    if changed then
+      show_newest()
+      request_redraw()
+    end
+  end, {
+    group = group,
+    desc = "ui.statusline: drop the LSP progress of a detached client",
   })
 end
 

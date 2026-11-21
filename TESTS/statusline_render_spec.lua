@@ -413,6 +413,63 @@ describe("ui.statusline.themes.default", function()
     vim.api.nvim_buf_delete(buf, { force = true })
   end)
 
+  ---@param client integer
+  ---@param token string
+  ---@param value table
+  local function progress(client, token, value)
+    vim.api.nvim_exec_autocmds("LspProgress", {
+      pattern = value.kind,
+      data = { client_id = client, params = { token = token, value = value } },
+    })
+  end
+
+  -- rust-analyzer/jdtls report hundreds of times a second; each redraw is a
+  -- full statusline render. Bench (2000 reports, default statusline):
+  -- 2000 renders, ~1.3 ms per report before; a handful of renders after.
+  it("a burst of LSP progress reports redraws the statusline only a few times", function()
+    local primitives = require("ui.statusline.utils.primitives")
+    primitives.autocmds()
+    local real_redraw = primitives._redraw
+    local redraws = 0
+    primitives._redraw = function()
+      redraws = redraws + 1
+    end
+
+    progress(7, "burst", { kind = "begin", title = "Indexing" })
+    for i = 1, 500 do
+      progress(7, "burst", { kind = "report", percentage = i % 100 })
+    end
+    local during = redraws
+    progress(7, "burst", { kind = "end" })
+    vim.wait(400, function()
+      return false
+    end)
+    primitives._redraw = real_redraw
+
+    assert.is_true(during <= 3, ("%d redraws for 501 events"):format(during))
+    -- The last state is always drawn: the trailing redraw after the burst.
+    assert.is_true(redraws > during, ("no trailing redraw (%d)"):format(redraws))
+    assert.equals("", primitives.state.lsp_msg)
+  end)
+
+  it("one server's end leaves another server's running progress in place", function()
+    local primitives = require("ui.statusline.utils.primitives")
+    primitives.autocmds()
+
+    progress(11, "a", { kind = "begin", title = "Indexing" })
+    progress(12, "b", { kind = "begin", title = "Building" })
+    assert.is_truthy(primitives.state.lsp_msg:find("Building", 1, true), primitives.state.lsp_msg)
+    progress(12, "b", { kind = "end" })
+    assert.is_truthy(primitives.state.lsp_msg:find("Indexing", 1, true), primitives.state.lsp_msg)
+    -- A report without a title keeps the title its begin gave.
+    progress(11, "a", { kind = "report", percentage = 40 })
+    assert.is_truthy(primitives.state.lsp_msg:find("Indexing", 1, true), primitives.state.lsp_msg)
+    assert.is_truthy(primitives.state.lsp_msg:find("40%%", 1, true), primitives.state.lsp_msg)
+    -- A server that detaches mid-progress never sends its end.
+    vim.api.nvim_exec_autocmds("LspDetach", { data = { client_id = 11 } })
+    assert.equals("", primitives.state.lsp_msg)
+  end)
+
   it("escapes a % in the cwd folder name", function()
     -- Stubbed, not a real `:cd` and `columns` change: DirChanged and the redraw they cause in a
     -- headless run are what made Windows runs exit 139/127.
