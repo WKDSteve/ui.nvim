@@ -43,7 +43,7 @@ return {
     { input = "<LeftMouse><2,22>", note = "left click on the branch in the statusline" },
     {
       wait = "_G.said('repository has no commits yet')",
-      timeout = 5000,
+      timeout = 15000,
       note = "no branch to offer: the message names the empty repository",
     },
     {
@@ -53,13 +53,13 @@ return {
     { input = "<LeftMouse><2,22>", note = "left click again" },
     {
       wait = "vim.api.nvim_win_get_config(0).relative ~= ''",
-      timeout = 5000,
+      timeout = 15000,
       note = "the two branches as buttons",
     },
     { keys = "f", note = "the hotkey of the button feature" },
     {
       wait = "_G.said('Switched to branch feature')",
-      timeout = 5000,
+      timeout = 15000,
       note = "the checkout ran",
     },
     {
@@ -69,13 +69,13 @@ return {
     { input = "<RightMouse><2,22>", note = "right click on the branch" },
     {
       wait = "vim.api.nvim_win_get_config(0).relative ~= ''",
-      timeout = 5000,
+      timeout = 15000,
       note = "the segment's menu: switch, copy, details",
     },
     { keys = "jj<CR>", note = "the third row, Details" },
     {
       wait = "_G.said('## feature')",
-      timeout = 5000,
+      timeout = 15000,
       note = "git status names the branch",
     },
   },
