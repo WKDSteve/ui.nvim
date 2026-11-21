@@ -265,23 +265,50 @@ describe("ui.statusline.modules.git_clickable", function()
   -- `vim.system` (not `vim.fn.systemlist`) -- fake that instead, routing by
   -- `cmd[2]` (the git subcommand), the same way `lib.nvim.git`'s own argv
   -- distinguishes a branch listing from a `current_branch`/`checkout` call.
+  --
+  -- Every click goes through `lib.nvim.git.run_async` now: the fake answers a
+  -- callback on the next loop iteration, and a blocking `:wait()` RAISES (and
+  -- is counted in `sync_waits`) -- a click that froze the editor on a git
+  -- process again fails these specs (`testing perf`, sheet
+  -- statusline.git-branch, measured ~400 ms of freezes per switch before).
+  local sync_waits = 0
   ---@param routes table<string, {code: integer, stdout: string, stderr: string}>
   local function mock_system(routes)
+    sync_waits = 0
     ---@diagnostic disable-next-line: duplicate-set-field
-    vim.system = function(cmd, _opts, cb)
-      local res = routes[cmd[2]] or { code = 1, stdout = "", stderr = "" }
+    vim.system = function(cmd, opts, cb)
+      local route = routes[cmd[2]] or { code = 1, stdout = "", stderr = "" }
+      local res = vim.tbl_extend("force", { signal = 0 }, route)
       if cb then
         vim.schedule(function()
+          -- `lib.nvim.cross.run_argv` collects stderr through a stream callback.
+          if opts and type(opts.stderr) == "function" then
+            if (res.stderr or "") ~= "" then
+              opts.stderr(nil, res.stderr)
+            end
+            opts.stderr(nil, nil)
+          end
           cb(res)
         end)
-        return { wait = function() end }
       end
       return {
         wait = function()
-          return res
+          sync_waits = sync_waits + 1
+          error("git_clickable must not wait on " .. table.concat(cmd, " "))
+        end,
+        kill = function() end,
+        is_closing = function()
+          return true
         end,
       }
     end
+  end
+
+  ---@param cond fun(): any
+  local function wait_for(cond)
+    return vim.wait(2000, function()
+      return cond() and true or false
+    end, 5)
   end
 
   before_each(function()
@@ -315,8 +342,7 @@ describe("ui.statusline.modules.git_clickable", function()
       .. "(gitsuite.nvim not loaded)",
     function()
       mock_system({
-        ["for-each-ref"] = { code = 0, stdout = "main\nfeature/x\n", stderr = "" },
-        ["symbolic-ref"] = { code = 0, stdout = "main\n", stderr = "" },
+        ["for-each-ref"] = { code = 0, stdout = "*main\n feature/x\n", stderr = "" },
       })
 
       local original_select = vim.ui.select
@@ -327,18 +353,71 @@ describe("ui.statusline.modules.git_clickable", function()
       end
 
       clickable._dispatch(click_id, "l")
+      wait_for(function()
+        return seen_items
+      end)
       vim.ui.select = original_select
 
       assert.same({ "main", "feature/x" }, seen_items)
-      assert.is_true(seen_opts.prompt:find("main", 1, true) ~= nil)
+      assert.is_true(seen_opts.prompt:find("current: main", 1, true) ~= nil, seen_opts.prompt)
+      assert.equals(0, sync_waits)
     end
   )
+
+  it("choosing a branch runs git checkout asynchronously and reports git's stderr", function()
+    mock_system({
+      ["for-each-ref"] = { code = 0, stdout = "*main\n feature/x\n", stderr = "" },
+      ["checkout"] = { code = 1, stdout = "", stderr = "error: would be overwritten\n" },
+    })
+    local original_select = vim.ui.select
+    ---@diagnostic disable-next-line: duplicate-set-field
+    vim.ui.select = function(_items, _opts, on_choice)
+      on_choice("feature/x")
+    end
+    local original_notify = vim.notify
+    local said
+    ---@diagnostic disable-next-line: duplicate-set-field
+    vim.notify = function(msg)
+      said = tostring(msg)
+    end
+
+    clickable._dispatch(click_id, "l")
+    wait_for(function()
+      return said
+    end)
+    vim.ui.select = original_select
+    vim.notify = original_notify
+
+    assert.is_true((said or ""):find("git checkout feature/x failed", 1, true) ~= nil, said)
+    assert.is_true((said or ""):find("would be overwritten", 1, true) ~= nil, said)
+    assert.equals(0, sync_waits)
+  end)
+
+  it("only the newest of two quick left clicks opens a picker", function()
+    mock_system({
+      ["for-each-ref"] = { code = 0, stdout = "*main\n", stderr = "" },
+    })
+    local original_select = vim.ui.select
+    local opened = 0
+    ---@diagnostic disable-next-line: duplicate-set-field
+    vim.ui.select = function()
+      opened = opened + 1
+    end
+
+    clickable._dispatch(click_id, "l")
+    clickable._dispatch(click_id, "l")
+    wait_for(function()
+      return opened > 0
+    end)
+    vim.wait(50)
+    vim.ui.select = original_select
+
+    assert.equals(1, opened)
+  end)
 
   it("left click warns instead of opening a picker when there are no branches", function()
     mock_system({
       ["for-each-ref"] = { code = 0, stdout = "", stderr = "" },
-      ["symbolic-ref"] = { code = 1, stdout = "", stderr = "" },
-      ["rev-parse"] = { code = 0, stdout = "true\n", stderr = "" },
     })
 
     local original_select = vim.ui.select
@@ -347,13 +426,25 @@ describe("ui.statusline.modules.git_clickable", function()
     vim.ui.select = function()
       select_called = true
     end
+    local original_notify = vim.notify
+    local warned
+    ---@diagnostic disable-next-line: duplicate-set-field
+    vim.notify = function(msg)
+      warned = tostring(msg)
+    end
 
     assert.has_no.errors(function()
       clickable._dispatch(click_id, "l")
     end)
+    wait_for(function()
+      return warned
+    end)
     vim.ui.select = original_select
+    vim.notify = original_notify
 
     assert.is_false(select_called)
+    assert.is_true((warned or ""):find("no commits yet", 1, true) ~= nil, warned)
+    assert.equals(0, sync_waits)
   end)
 
   it(
@@ -407,10 +498,11 @@ describe("ui.statusline.modules.git_clickable", function()
     assert.is_true(#opened_with > 0)
   end)
 
-  -- The menu needs the current branch only (for "Copy branch name"); listing
-  -- every branch as well was one more blocking git per right click, seen
-  -- by `testing perf` (sheet statusline.git-branch).
-  it("right click asks git for the current branch only, not the branch list", function()
+  -- The menu needs the current branch only (for "Copy branch name"), and
+  -- reads it from `.git/HEAD`: listing every branch, and later even
+  -- `symbolic-ref` alone, was a blocking git per right click, seen by
+  -- `testing perf` (sheet statusline.git-branch).
+  it("right click starts no git process at all before the menu opens", function()
     mock_system({
       ["for-each-ref"] = { code = 0, stdout = "main\n", stderr = "" },
       ["symbolic-ref"] = { code = 0, stdout = "main\n", stderr = "" },
@@ -435,7 +527,55 @@ describe("ui.statusline.modules.git_clickable", function()
     contextmenu.open = original_open
 
     assert.equals("table", type(opened_with))
-    assert.same({ "symbolic-ref" }, subcommands)
+    assert.same({}, subcommands)
+  end)
+
+  it("right click names the branch from .git/HEAD, also through a worktree's .git file", function()
+    local root = vim.fn.tempname()
+    local gitdir = root .. "/real-gitdir"
+    local top = root .. "/wt"
+    vim.fn.mkdir(gitdir, "p")
+    vim.fn.mkdir(top .. "/sub", "p")
+    vim.fn.writefile({ "ref: refs/heads/topic/x" }, gitdir .. "/HEAD")
+    vim.fn.writefile({ "gitdir: ../real-gitdir" }, top .. "/.git")
+    local saved_cwd = vim.fn.getcwd()
+    vim.cmd("lcd " .. vim.fn.fnameescape(top .. "/sub"))
+
+    local contextmenu = require("ui.contextmenu")
+    local original_open = contextmenu.open
+    local opened_with
+    ---@diagnostic disable-next-line: duplicate-set-field
+    contextmenu.open = function(items)
+      opened_with = items
+    end
+    local reg
+    local original_setreg = vim.fn.setreg
+    ---@diagnostic disable-next-line: duplicate-set-field
+    vim.fn.setreg = function(_, value)
+      reg = value
+    end
+    local original_notify = vim.notify
+    vim.notify = function() end
+
+    clickable._dispatch(click_id, "r")
+    local copy
+    for _, item in ipairs(opened_with or {}) do
+      if item.name == "Copy branch name" then
+        copy = item
+      end
+    end
+    if copy then
+      copy.cmd()
+    end
+
+    contextmenu.open = original_open
+    vim.fn.setreg = original_setreg
+    vim.notify = original_notify
+    vim.cmd("lcd " .. vim.fn.fnameescape(saved_cwd))
+    vim.fn.delete(root, "rf")
+
+    assert.is_not_nil(copy, vim.inspect(opened_with))
+    assert.equals("topic/x", reg)
   end)
 
   it("right click honours ui.setup({ menu = false })", function()
@@ -467,8 +607,7 @@ describe("ui.statusline.modules.git_clickable", function()
       .. "wiring one there would have raced ui.statusline.menu against this picker",
     function()
       mock_system({
-        ["for-each-ref"] = { code = 0, stdout = "main\n", stderr = "" },
-        ["symbolic-ref"] = { code = 0, stdout = "main\n", stderr = "" },
+        ["for-each-ref"] = { code = 0, stdout = "*main\n", stderr = "" },
       })
 
       local menu = require("ui.statusline.menu")
@@ -487,6 +626,9 @@ describe("ui.statusline.modules.git_clickable", function()
       end
 
       clickable._dispatch(click_id, "l", 2)
+      wait_for(function()
+        return select_called
+      end)
 
       menu.open = original_menu_open
       vim.ui.select = original_select
@@ -518,6 +660,9 @@ describe("ui.statusline.modules.git_clickable", function()
         warned = tostring(msg)
       end
       clickable._dispatch(click_id, "l")
+      wait_for(function()
+        return warned
+      end)
       vim.notify = original_notify
       assert.is_not_nil(warned, "expected switch_branch() to warn")
       return warned

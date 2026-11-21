@@ -9,11 +9,11 @@
 --- Branch listing/checkout go through `lib.nvim.git` (GS-15) instead of a
 --- raw `vim.fn.systemlist`: the original had no `-C`/`opts.dir` support, and
 --- `systemlist` folds a failed command's stderr into its output, so every
---- failure notification here quoted git's own diagnosis. `lib.nvim.git`'s
---- read helpers only ever capture stdout (nothing to quote on failure, by
---- their own doc comments), but `checkout` is the one exception -- it uses
---- `run_blocking`, which does capture stderr -- so a failed checkout still
---- names git's real reason.
+--- failure notification here quoted git's own diagnosis. Every git call
+--- here is `lib.nvim.git.run_async` (it reports stderr too, so a failed
+--- checkout still names git's real reason) -- a click never blocks the
+--- editor; the current branch for the right-click menu comes from
+--- `.git/HEAD` without any process.
 ---
 --- Left click delegates to `gitsuite.features.branch.switch()` when
 --- gitsuite.nvim is loaded (its own picker: pickers.nvim when available,
@@ -29,24 +29,116 @@ local primitives = require("ui.statusline.utils.primitives")
 local clickable = require("ui.statusline.utils.clickable")
 local notify = require("lib.nvim.notify").create("[ui.statusline.modules.git_clickable]")
 
---- Every local branch, plus the current one if `git` reports one cleanly.
----@return string[] branches
----@return string|nil current
-local function list_branches()
-  local branches = git.refs(nil, { branches = true, remotes = false, tags = false })
-  local current = git.current_branch()
-  return branches, current
+--- The branch HEAD points at, read from `<gitdir>/HEAD` instead of asking a
+--- `git symbolic-ref` process (~100 ms of a frozen editor per right click on
+--- Windows). `nil` for a detached HEAD, a HEAD outside `refs/heads/`, or no
+--- repository above the cwd -- the cases `symbolic-ref --short` reports
+--- nothing for as well. A linked worktree or submodule has a `.git` *file*
+--- naming the real git directory.
+---@return string|nil
+local function head_branch()
+  local cwd = vim.fn.getcwd()
+  local top = vim.fs.root(cwd, ".git")
+  if not top then
+    return nil
+  end
+  local dotgit = top .. "/.git"
+  local gitdir = dotgit
+  if vim.fn.isdirectory(dotgit) == 0 then
+    local fd = io.open(dotgit, "rb")
+    if not fd then
+      return nil
+    end
+    local text = fd:read("*a") or ""
+    fd:close()
+    local target = text:match("^gitdir:%s*(.-)%s*$")
+    if not target or target == "" then
+      return nil
+    end
+    gitdir = (target:match("^/") or target:match("^%a:[/\\]")) and target or (top .. "/" .. target)
+  end
+  local fd = io.open(gitdir .. "/HEAD", "rb")
+  if not fd then
+    return nil
+  end
+  local head = fd:read("*a") or ""
+  fd:close()
+  local branch = head:match("^ref:%s*refs/heads/(.-)%s*$")
+  return (branch and branch ~= "") and branch or nil
 end
 
+--- The pending branch listing of the latest left click. A second click
+--- before the first listing came back stops it: only the newest click may
+--- open a picker (an older answer arriving late would stack a second one).
+---@type { stop: fun() }|nil
+local pending_list = nil
+local list_generation = 0
+
+--- Every local branch and the current one, from ONE asynchronous
+--- `git for-each-ref` (`%(HEAD)` marks the checked-out branch with `*`) --
+--- the editor stays responsive while git runs. `on_done(nil, err)` when git
+--- itself failed (not a repository, git not on `$PATH`); an empty list when
+--- the repository has no commits yet.
+---@param on_done fun(branches: string[]|nil, current: string|nil, err: string|nil)
+---@return nil
+local function list_branches_async(on_done)
+  if pending_list then
+    pcall(pending_list.stop)
+  end
+  list_generation = list_generation + 1
+  local generation = list_generation
+  pending_list = git.run_async(
+    {
+      "for-each-ref",
+      "--sort=-creatordate",
+      "--format=%(HEAD)%(refname:strip=2)",
+      "refs/heads/",
+    },
+    nil,
+    function(res)
+      if generation ~= list_generation then
+        return
+      end
+      pending_list = nil
+      if res.code ~= 0 then
+        on_done(nil, nil, vim.trim(res.stderr or ""))
+        return
+      end
+      local branches, current = {}, nil
+      for line in vim.gsplit(res.stdout or "", "\n", { plain = true, trimempty = true }) do
+        local mark, name = line:sub(1, 1), vim.trim(line:sub(2))
+        if name ~= "" then
+          branches[#branches + 1] = name
+          if mark == "*" then
+            current = name
+          end
+        end
+      end
+      on_done(branches, current, nil)
+    end
+  )
+end
+
+--- `git checkout <name>`, asynchronous: the result (with git's own stderr on
+--- failure) arrives as a notification once git is done.
 ---@param name string
 ---@return nil
 local function checkout(name)
-  local ok, err = git.checkout(name)
-  if not ok then
-    notify.error(("git checkout %s failed: %s"):format(name, err))
+  if name == "" or name:sub(1, 1) == "-" then
+    notify.error(("git checkout: invalid revision %s"):format(vim.inspect(name)))
     return
   end
-  notify.info("Switched to branch " .. name)
+  git.run_async({ "checkout", name }, nil, function(res)
+    if res.code ~= 0 then
+      local why = vim.trim(res.stderr or "")
+      if why == "" then
+        why = ("exit code %d"):format(res.code)
+      end
+      notify.error(("git checkout %s failed: %s"):format(name, why))
+      return
+    end
+    notify.info("Switched to branch " .. name)
+  end)
 end
 
 --- The bare fallback picker: a plain `vim.ui.select` over every local
@@ -54,25 +146,32 @@ end
 --- operation, not something to fire speculatively per row the way the theme
 --- picker's `:colorscheme` preview can.
 ---
+--- Opens once the asynchronous branch listing is back; nothing here blocks
+--- the editor (`testing perf`, sheet statusline.git-branch: the synchronous
+--- listing plus `symbolic-ref` and `checkout` froze it for ~400 ms per
+--- switch).
+---
 --- Used only when gitsuite.nvim is not loaded -- see `switch_branch` below.
 ---@return nil
 local function select_and_checkout()
-  local branches, current = list_branches()
-  if #branches == 0 then
-    if git.in_git_repo() then
+  list_branches_async(function(branches, current, err)
+    if not branches then
+      local detail = (err and err ~= "") and (": " .. err) or ""
+      notify.warn("No git branches found (not a git repo, or git not on $PATH)" .. detail)
+      return
+    end
+    if #branches == 0 then
       notify.warn("No git branches found (repository has no commits yet)")
-    else
-      notify.warn("No git branches found (not a git repo, or git not on $PATH)")
+      return
     end
-    return
-  end
 
-  vim.ui.select(branches, {
-    prompt = "Switch branch" .. (current and (" (current: " .. current .. ")") or ""),
-  }, function(choice)
-    if choice and choice ~= current then
-      checkout(choice)
-    end
+    vim.ui.select(branches, {
+      prompt = "Switch branch" .. (current and (" (current: " .. current .. ")") or ""),
+    }, function(choice)
+      if choice and choice ~= current then
+        checkout(choice)
+      end
+    end)
   end)
 end
 
@@ -104,9 +203,9 @@ end
 local function open_context_menu()
   local contextmenu = require("ui.contextmenu")
 
-  -- Only the name of the current branch: the list is the switcher's business,
-  -- and each git call here blocks the editor before the menu opens.
-  local current = git.current_branch()
+  -- Only the name of the current branch, read from `.git/HEAD` (no process):
+  -- the list is the switcher's business, and the menu must open at once.
+  local current = head_branch()
   local items = {}
   contextmenu.group(
     items,
@@ -116,8 +215,13 @@ local function open_context_menu()
       notify.info("Copied: " .. current)
     end),
     contextmenu.entry(true, "Details", function()
-      local out = vim.fn.systemlist({ "git", "status", "--short", "--branch" })
-      notify.info(table.concat(out, "\n"))
+      git.run_async({ "status", "--short", "--branch" }, nil, function(res)
+        local text = vim.trim(res.stdout or "")
+        if res.code ~= 0 then
+          text = vim.trim(text .. "\n" .. (res.stderr or ""))
+        end
+        notify.info(text)
+      end)
     end)
   )
 
