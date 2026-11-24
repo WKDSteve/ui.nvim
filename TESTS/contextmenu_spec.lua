@@ -39,6 +39,14 @@ end
 local H = { eq = harness_eq, ok = harness_ok }
 
 describe("ui.contextmenu (ported from ui.contextmenu's TESTS/contextmenu_spec.lua)", function()
+  it("is lib.nvim's contextmenu, not a second copy", function()
+    local ui_cm = require("ui.contextmenu")
+    H.ok(ui_cm == require("lib.nvim.contextmenu"), "one module under both names")
+    ui_cm.set_enabled(false)
+    H.eq(require("lib.nvim.contextmenu").is_enabled(), false, "one state under both names")
+    ui_cm.set_enabled(true)
+  end)
+
   it("runs the full ported assertion body", function()
     local eq = H.eq
     local ok = H.ok
