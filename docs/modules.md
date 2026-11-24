@@ -561,5 +561,4 @@ What stays in ui.nvim is the user's surface: the setup (`require("ui").setup`), 
 stubs or reloads a kit module through `package.loaded` has to use the `lib.nvim.ui.kit.<name>` name: that is where
 the module lives.
 
-`ui.contextmenu` is still duplicated (lib.nvim keeps a frozen copy for its own call sites);
-[`TESTS/contextmenu_drift_spec.lua`](../TESTS/contextmenu_drift_spec.lua) is what remains of the old drift guard.
+`ui.contextmenu` re-exports `lib.nvim.contextmenu` (one module, like `ui.kit.*`); there is no second copy to keep in step.
