@@ -1,5 +1,5 @@
 ---@module 'ui.statusline.modules.lsp.helpers.paths'
---- Optimized path helpers with buffer-tick-aware caching
+--- Optimized path helpers with a per-buffer cache keyed by the buffer's name
 
 local M = {}
 
@@ -9,34 +9,36 @@ local api, fn, fs, uv = vim.api, vim.fn, vim.fs, vim.uv or vim.loop
 local path_cache = require("lib.lua.memo.lru").new(128)
 local Autocmd = require("lib.nvim.bindings.autocmd")
 local normkey = require("lib.nvim.fs.normkey")
-local tick_cache = {} -- bufnr -> { tick, abs_path }
-local tick_watched = false
+-- bufnr -> { name, abs_path }. Keyed by the buffer's name, not its changedtick: `:file`,
+-- `:saveas` or an LSP rename change the name of an unmodified buffer without touching the
+-- tick, and a tick-keyed entry kept showing the old path until the next edit.
+local buf_cache = {}
+local buf_watched = false
 
---- Clear the tick cache when a buffer is deleted. Registered on the first cached entry, not on
---- `require`: there is nothing to clear before that.
+--- Drop a buffer's entry when the buffer goes away. `BufWipeout` as well as `BufDelete`:
+--- `BufDelete` fires only for listed buffers, so unlisted ones (scratch, help) leaked their
+--- entry. Registered on the first cached entry, not on `require`: there is nothing to clear
+--- before that.
 ---@return nil
-local function watch_tick_cache()
-  if tick_watched then
+local function watch_buf_cache()
+  if buf_watched then
     return
   end
-  tick_watched = true
-  Autocmd.create("BufDelete", function(args)
-    tick_cache[args.buf] = nil
+  buf_watched = true
+  Autocmd.create({ "BufDelete", "BufWipeout" }, function(args)
+    buf_cache[args.buf] = nil
   end, {
     group = Autocmd.group("UiPathsCache", true),
-    desc = "Clear path tick cache on buffer delete",
+    desc = "Clear path cache on buffer delete or wipeout",
   })
 end
 
---- Get current buffer tick (for cache invalidation)
+---@nodiscard
+--- Whether `bufnr` has a cached absolute path (for specs).
 ---@param bufnr integer
----@return integer
-local function get_tick(bufnr)
-  local ok, b = pcall(vim.api.nvim_buf_get_var, bufnr, "changedtick")
-  if ok and type(b) == "number" then
-    return b
-  end
-  return vim.b[bufnr] and vim.b[bufnr].changedtick or 0
+---@return boolean
+function M._is_cached(bufnr)
+  return buf_cache[bufnr] ~= nil
 end
 
 --- Normalize separators (pure function)
@@ -67,18 +69,14 @@ function M.path_absolute(path_or_buf)
       return ""
     end
 
-    -- Check tick cache
-    local current_tick = get_tick(bufnr)
-    local cached = tick_cache[bufnr]
-
-    if cached and cached.tick == current_tick then
-      return cached.abs_path
-    end
-
-    -- Cache miss → compute
     local ok_name, path = pcall(api.nvim_buf_get_name, bufnr)
     if not ok_name or not path or path == "" then
       return ""
+    end
+
+    local cached = buf_cache[bufnr]
+    if cached and cached.name == path then
+      return cached.abs_path
     end
 
     -- `normkey` rather than a raw `fs_realpath`-with-fallback: a path that
@@ -89,10 +87,9 @@ function M.path_absolute(path_or_buf)
     local abs = fn.fnamemodify(path, ":p")
     local result = norm_sep(normkey(abs))
 
-    -- Update tick cache
-    watch_tick_cache()
-    tick_cache[bufnr] = {
-      tick = current_tick,
+    watch_buf_cache()
+    buf_cache[bufnr] = {
+      name = path,
       abs_path = result,
     }
 

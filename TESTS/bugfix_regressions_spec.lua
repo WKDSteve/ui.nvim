@@ -191,6 +191,42 @@ describe("bug: display_path() mutated shared config as a side effect", function(
   end)
 end)
 
+describe("bug: the buffer path cache survived a rename and a wipeout", function()
+  local paths = require("ui.statusline.modules.lsp.helpers.paths")
+
+  it("a renamed unmodified buffer shows its new path at once", function()
+    local dir = vim.fn.tempname()
+    local buf = vim.api.nvim_create_buf(true, false)
+    vim.api.nvim_buf_set_name(buf, dir .. "/old.lua")
+    local before = paths.path_absolute(buf)
+    local tick = vim.api.nvim_buf_get_changedtick(buf)
+
+    -- `:file new.lua` on an unmodified buffer: the name changes, the content does not.
+    vim.api.nvim_buf_set_name(buf, dir .. "/new.lua")
+    if vim.api.nvim_buf_get_changedtick(buf) ~= tick then
+      print("n/a  renaming a buffer changed its changedtick on this Neovim")
+      vim.api.nvim_buf_delete(buf, { force = true })
+      return
+    end
+    local after = paths.path_absolute(buf)
+
+    vim.api.nvim_buf_delete(buf, { force = true })
+    assert.matches("old%.lua$", before)
+    assert.matches("new%.lua$", after)
+  end)
+
+  it("an unlisted buffer's entry goes away on wipeout", function()
+    local buf = vim.api.nvim_create_buf(false, true)
+    vim.api.nvim_buf_set_name(buf, vim.fn.tempname() .. "/scratch.lua")
+    paths.path_absolute(buf)
+    assert.is_true(paths._is_cached(buf))
+
+    -- BufDelete does not fire for an unlisted buffer, BufWipeout does.
+    vim.api.nvim_buf_delete(buf, { force = true })
+    assert.is_false(paths._is_cached(buf))
+  end)
+end)
+
 describe(
   "bug: display_path() collapsed an explicit path_home_tilde=false override to nil",
   function()
