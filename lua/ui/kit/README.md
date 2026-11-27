@@ -572,6 +572,7 @@ values, so an epoch clock works equally well.
 | `<C-e>` | flip between all expanded / all collapsed |
 | `<C-j>`, `+` | load older entries (`opts.load_more("older")`) |
 | `<C-k>`, `-` | load newer entries (`opts.load_more("newer")`) |
+| `<C-c>` | copy the whole log (every entry unfolded, in the order shown) to the clipboard |
 | `?`, `g?` | cheatsheet: this table, built from the very mapping list (plus `opts.extra_cheatsheet_lines`) |
 | `q`, `<Esc>` | close |
 
