@@ -28,7 +28,7 @@ local M = {}
 ---@field mouse? boolean  # bind `<RightMouse>` (default true)
 ---@field key? string|false  # bind this key to the same menu at the cursor (default false: no global key is taken unasked)
 ---@field prewarm? boolean  # load the sister plugins' menu modules in idle slices after startup, so the first open is not a stall (default true; `false` keeps lazy plugins unloaded until the first open)
----@field renderer? Ui.ContextMenu.Renderer  # default "kit": no third-party menu plugin needed
+---@field renderer? Ui.ContextMenu.Renderer  # "kit", the only renderer (kept so an existing config still validates)
 ---@field native_popup? boolean  # keep Neovim's own right-click popup (default false)
 ---@field sections? table<string, boolean>  # `code`, `clipboard`, `file`, `delete`, `tools`
 ---@field entries? table<string, boolean>  # per general entry, see DEFAULTS.entries
@@ -82,7 +82,7 @@ M.DEFAULTS = {
 local store = require("ui.util.config").new("ui.menu", M.DEFAULTS, {
   schema = {
     key = "string|false",
-    renderer = { "string", enum = { "auto", "kit", "nvzone" } },
+    renderer = { "string", enum = { "kit" } },
     hints = { "table", of = "string" },
     integrations = "boolean|table",
   },

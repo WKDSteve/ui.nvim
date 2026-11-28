@@ -7,11 +7,10 @@
 --- own: `<CR>` takes the colour (replacing the `#hex` the picker was opened
 --- on, or inserting after the cursor), `y` yanks it, `q`/`<Esc>` close.
 ---
---- The idea is nvzone/minty's (`:Huefy`, `:Shades`), the frame-side
---- placement is this plugin's: it already assembles palettes
+--- The frame-side placement is this plugin's: it already assembles palettes
 --- (`ui.theme.palette`) and owns the themed float (`ui.kit.surface`), so a
 --- colour picker is one more themed surface rather than a dependency on a
---- second UI toolkit (`nvzone/volt`). Cells are two-column highlight
+--- second UI toolkit. Cells are two-column highlight
 --- groups created on demand and cached by hex, which is the one Neovim
 --- primitive a terminal colour swatch can be.
 

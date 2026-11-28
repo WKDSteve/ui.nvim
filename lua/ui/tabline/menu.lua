@@ -345,8 +345,8 @@ function M.open(bufnr)
   if surf and surf.on_close then
     surf:on_close(release)
   else
-    -- nvzone/menu (or a disabled menu) hands back no close hook, so there is
-    -- no telling when the menu goes away. A bounded highlight beats one that
+    -- A disabled menu hands back no close hook, so there is no telling when
+    -- the menu goes away. A bounded highlight beats one that
     -- can stay lit on a chip for the rest of the session.
     vim.defer_fn(release, 1500)
   end

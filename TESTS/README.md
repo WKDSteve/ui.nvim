@@ -185,7 +185,7 @@ not padding for a number:
   highlight extmarks get produced) exhaustively, headless, but not how a
   real terminal paints the result. Open a picker/confirm/menu/toast in a
   real Neovim session to verify appearance.
-- **The nvzone/menu popup actually appearing on RightMouse**
+- **The context-menu popup actually appearing on RightMouse**
   (`ui.contextmenu`) is UI-only the same way; `contextmenu_spec.lua`
   verifies the menu-building logic, not the popup rendering itself.
 

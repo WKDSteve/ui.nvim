@@ -1,7 +1,7 @@
 ---@module 'ui.util.soft_require'
 --- Single place that `pcall`s `require()` for a foreign, optional plugin.
 ---
---- None of nvim-web-devicons, nvzone/menu, casedesk.nvim, recommender.nvim,
+--- None of nvim-web-devicons, casedesk.nvim, recommender.nvim,
 --- runtime-analysis.nvim, sandbox.nvim, sessions.nvim, github_stats.nvim,
 --- filetree.nvim, gitsuite.nvim or lazy.nvim are hard dependencies of
 --- ui.nvim -- their absence is the ordinary standalone case, not an error.
@@ -37,7 +37,6 @@ local M = {}
 ---@type { mod: string, optional_for: string }[]
 M.PROBED = {
   { mod = "nvim-web-devicons", optional_for = "file icons in the statusline and tabline" },
-  { mod = "menu", optional_for = "nvzone/menu as the context-menu renderer" },
   { mod = "lazy", optional_for = "the plugin-count segment" },
   {
     mod = "conform",

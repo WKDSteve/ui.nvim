@@ -8,13 +8,10 @@
 --- instead of hand-converting each assertion to assert.* calls one at a
 --- time.
 ---
---- Covers: entry/group/submenu (pure data builders), renderer selection,
---- native-popup opt-out default, bind_buffer's soft-dependency
---- degradation (nvzone/menu is not installed in this suite either, so
---- every path here resolves to the kit renderer -- which is the point:
---- what these assert is exactly what has to keep holding once nvzone/menu
---- is dropped), win/anchor/row/col forwarding, mouse hover, and
---- scroll-wheel overscroll guards.
+--- Covers: entry/group/submenu (pure data builders), the kit as the only
+--- renderer, native-popup opt-out default, bind_buffer's wiring,
+--- win/anchor/row/col forwarding, mouse hover, and scroll-wheel overscroll
+--- guards.
 
 --- H.eq(actual, expected) -- note the argument order, the reverse of
 --- assert.equals(expected, actual), since this mirrors lib.nvim's own
@@ -115,21 +112,23 @@ describe("ui.contextmenu (ported from ui.contextmenu's TESTS/contextmenu_spec.lu
       eq(sub.items, items, "submenu: items passed through")
     end
 
-    -- ---------- renderer selection ----------
+    -- ---------- renderer: the kit, always ----------
 
     do
-      eq(contextmenu.renderer(), "auto", "renderer: defaults to auto")
+      eq(contextmenu.renderer(), "kit", "renderer: the kit by default")
 
       contextmenu.setup({ renderer = "kit" })
-      eq(contextmenu.renderer(), "kit", "renderer: setup narrows it")
+      eq(contextmenu.renderer(), "kit", "renderer: setup with the kit keeps it")
 
-      contextmenu.setup({})
-      eq(contextmenu.renderer(), "kit", "renderer: setup without the key leaves it alone")
-
-      -- The invalid value is the case under test.
+      -- A value left in a user's config by an older release is the case
+      -- under test: it must not raise, and the kit stays in charge.
+      local orig_notify = vim.notify
+      vim.notify = function() end
       ---@diagnostic disable-next-line: assign-type-mismatch
-      contextmenu.setup({ renderer = "nonsense" })
-      eq(contextmenu.renderer(), "kit", "renderer: an unknown value is rejected, not applied")
+      local setup_ok = pcall(contextmenu.setup, { renderer = "auto" })
+      vim.notify = orig_notify
+      ok(setup_ok, "renderer: an old value does not raise")
+      eq(contextmenu.renderer(), "kit", "renderer: an old value is not applied")
     end
 
     -- ---------- native_popup: off by default, opt-out not opt-in ----------
@@ -317,7 +316,7 @@ describe("ui.contextmenu (ported from ui.contextmenu's TESTS/contextmenu_spec.lu
       ok(not chooser.is_open(), "open: the menu closes after a leaf action")
     end
 
-    -- ---------- bind_buffer: soft dependency, no nvzone/menu required ----------
+    -- ---------- bind_buffer: wiring ----------
 
     do
       local chooser = require("ui.kit.chooser")
@@ -330,8 +329,6 @@ describe("ui.contextmenu (ported from ui.contextmenu's TESTS/contextmenu_spec.lu
         return {}
       end, { desc = "test menu" })
 
-      -- Triggering the keymap must not error even though "menu" (nvzone/menu)
-      -- is not installed in the test environment — the kit renderer takes over.
       local mapped = vim.fn.maparg("<RightMouse>", "n", false, true)
       ok(
         type(mapped) == "table" and mapped.buffer == 1,
@@ -340,10 +337,10 @@ describe("ui.contextmenu (ported from ui.contextmenu's TESTS/contextmenu_spec.lu
       eq(mapped.desc, "test menu", "bind_buffer: keymap desc passed through")
 
       local call_ok = pcall(mapped.callback)
-      ok(call_ok, "bind_buffer: triggering without nvzone/menu installed doesn't error")
+      ok(call_ok, "bind_buffer: triggering the mapping doesn't error")
       -- Items are now collected before any renderer is reached — the provider
       -- decides whether there is a menu at all, and an empty list opens none.
-      eq(get_items_called, true, "bind_buffer: get_items is called regardless of nvzone/menu")
+      eq(get_items_called, true, "bind_buffer: get_items is called on the trigger")
       ok(not chooser.is_open(), "bind_buffer: an empty item list opens nothing")
 
       vim.cmd("bwipeout! " .. buf)
@@ -561,7 +558,7 @@ describe("ui.contextmenu (ported from ui.contextmenu's TESTS/contextmenu_spec.lu
     -- Leave the module as the rest of the suite (and any host) expects it.
     -- `native_popup = true`: setup() now disables the native PopUp menu by
     -- default, which the rest of the shared test session did not ask for.
-    contextmenu.setup({ renderer = "auto", native_popup = true })
+    contextmenu.setup({ native_popup = true })
     vim.o.mousemodel = "popup_setpos"
   end)
 end)

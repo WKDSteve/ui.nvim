@@ -228,8 +228,8 @@ that gesture just switches to the chip, as any click used to. Pin protection
 has no opt-out.
 
 **The tab context menu** (`ui.tabline.menu`) holds only actions on that tab,
-drawn through `ui.contextmenu` -- so nvzone/menu when it is installed, the kit
-menu otherwise -- with the chip kept lit while it is up. Entries gate
+drawn through `ui.contextmenu` (the kit menu), with the chip kept lit while it
+is up. Entries gate
 themselves: nothing to close on the left of the first tab, `Save` only on a
 modified one.
 

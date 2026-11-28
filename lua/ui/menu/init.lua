@@ -206,13 +206,11 @@ end
 --- (autocmd-driven lazy plugins load on it), the first build of the entries.
 --- Both calls happen in one tick, so nothing is painted in between.
 ---
---- Skipped unless it is certainly harmless: the kit renderer (the only one
---- whose `open` hands back a surface to close again), Normal mode, no
---- command-line window, and the current window an ordinary one.
+--- Skipped unless it is certainly harmless: the menu enabled, Normal mode,
+--- no command-line window, and the current window an ordinary one.
 ---@return boolean warmed
 function M.warm()
-  local cfg = config.get()
-  if cfg.renderer ~= "kit" or not contextmenu.is_enabled() then
+  if not contextmenu.is_enabled() then
     return false
   end
   if vim.fn.mode() ~= "n" or vim.fn.getcmdwintype() ~= "" then

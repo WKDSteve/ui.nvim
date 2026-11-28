@@ -173,7 +173,6 @@ runs the menu has closed and Visual mode is over, so asking then always answered
 | --- | --- | --- |
 | `mouse` | `true` | `<RightMouse>` (normal and visual): menu at the pointer |
 | `key` | `false` | bind this key to the same menu at the cursor (`"<A-b>"`, say). No global key is taken unasked |
-| `renderer` | `"kit"` | `ui.contextmenu` renderer; `"auto"` prefers nvzone/menu when installed |
 | `native_popup` | `false` | `true` keeps Neovim's own right-click popup. With `mouse = false` `'mousemodel'` is left alone regardless |
 | `prewarm` | `true` | load the sister plugins' menu modules one per idle tick after startup (see below) |
 

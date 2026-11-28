@@ -132,15 +132,15 @@
 ---@field open fun(opts: Ui.Kit.MessageLog.Opts): Ui.Kit.MessageLog.Handle|nil
 
 --- One entry of a `kit.menu`. Two shapes are accepted, because this component
---- doubles as the native renderer for `ui.contextmenu`: the kit's own
---- `label`/`action` pair, and nvzone/menu's `name`/`cmd` (with `items` for a
+--- is the renderer behind `ui.contextmenu`: the kit's own
+--- `label`/`action` pair, and the context-menu entry's `name`/`cmd` (with `items` for a
 --- nested fly-out, `rtxt` for a right-aligned hint, `hl` for a row colour).
 --- `{ name = "separator" }` draws an inert divider.
 ---@class Ui.Kit.MenuItem
 ---@field label? string      # display text (leading/trailing space is trimmed)
 ---@field action? fun()      # callback run when the item is picked (alias: cb)
----@field name? string       # display text, nvzone/menu spelling (or the literal "separator")
----@field cmd? fun()|string  # leaf action, nvzone/menu spelling: callback or Ex command string
+---@field name? string       # display text, context-menu spelling (or the literal "separator")
+---@field cmd? fun()|string  # leaf action, context-menu spelling: callback or Ex command string
 ---@field items? Ui.Kit.MenuItem[]  # nested fly-out (mutually exclusive with cmd/action)
 ---@field rtxt? string       # right-aligned hint text (usually a keymap)
 ---@field icon? string       # leading glyph, drawn in a column of its own -- NOT part of `label`
@@ -157,7 +157,7 @@
 ---@field anchor? "NW"|"NE"|"SW"|"SE"  # which corner sits at (row, col); default "NW" (auto-flips to "SW" near the bottom of the screen for cursor/mouse)
 ---@field row? integer       # explicit placement, paired with `relative`
 ---@field col? integer
----@field mouse? boolean     # shorthand for `relative = "mouse"` (nvzone/menu's spelling)
+---@field mouse? boolean     # shorthand for `relative = "mouse"` (context-menu spelling)
 ---@field hide_cursor? boolean          # blank the terminal cursor while open; default true
 ---@field single_click? boolean         # one left click picks, a click outside dismisses; default true
 ---@field close_on_focus_lost? boolean  # dismiss when focus moves elsewhere; default true

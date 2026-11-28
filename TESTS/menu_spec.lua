@@ -1023,16 +1023,11 @@ describe("ui.menu", function()
       vim.cmd("only")
     end)
 
-    it("does nothing with another renderer, or with the menu disabled", function()
+    it("does nothing with the menu disabled", function()
       local calls = 0
       contextmenu.open = function()
         calls = calls + 1
       end
-      contextmenu.is_enabled = function()
-        return true
-      end
-      menu.setup({ mouse = false, key = false, prewarm = false, renderer = "nvzone" })
-      assert.is_false(menu.warm())
       menu.setup({ mouse = false, key = false, prewarm = false })
       contextmenu.is_enabled = function()
         return false
